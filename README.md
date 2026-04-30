@@ -9,6 +9,8 @@ cargo test --workspace
 cargo run -p atlas-cli -- check examples/p53_strict.atlas
 cargo run -p atlas-cli -- explain E_GUARD_ACTIVE
 cargo run -p atlas-cli -- export examples/p53_strict.atlas --format json
+cargo run -p atlas-cli -- run examples/p53_strict.atlas --mode smoke
+cargo run --bin atlas-cli -- metrics examples/p53_strict.atlas --format json
 cargo run -p atlas-cli -- bench --mode smoke
 ```
 

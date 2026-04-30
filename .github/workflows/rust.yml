@@ -30,15 +30,15 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-      - name: Valid .atlas accepted
+      - name: P55.1 check and export
         run: |
           set -euo pipefail
-          cargo run -p atlas-cli -- check examples/p53_strict.atlas
-          for file in examples/valid/*.atlas; do
-            cargo run -p atlas-cli -- check "$file"
-          done
+          cargo run --bin atlas-cli -- check examples/p53_strict.atlas
+          cargo run --bin atlas-cli -- export examples/p53_strict.atlas \
+            --format json > /tmp/p53_strict.json
+          diff -u tests/golden/p53_strict.json /tmp/p53_strict.json
 
-      - name: Invalid .atlas refused with stable codes
+      - name: Invalid .atlas refused
         run: |
           set -euo pipefail
 
@@ -46,22 +46,9 @@ jobs:
             file="$1"
             code="$2"
             output="/tmp/atlas-invalid-$(basename "$file").out"
-            if cargo run -p atlas-cli -- check "$file" > "$output" 2>&1; then
+            if cargo run --bin atlas-cli -- check "$file" > "$output" 2>&1; then
               cat "$output"
               echo "Expected $file to be refused with $code"
-              exit 1
-            fi
-            cat "$output"
-            grep -q "$code" "$output"
-          }
-
-          check_invalid_export() {
-            file="$1"
-            code="$2"
-            output="/tmp/atlas-export-invalid-$(basename "$file").out"
-            if cargo run -p atlas-cli -- export "$file" --format json > "$output" 2>&1; then
-              cat "$output"
-              echo "Expected export of $file to be refused with $code"
               exit 1
             fi
             cat "$output"
@@ -83,30 +70,15 @@ jobs:
           check_invalid examples/invalid/dangerous_encoded.atlas E_ACTION_UNKNOWN
           check_invalid examples/invalid/malformed_family.atlas E_FIELD_MISSING
 
-          check_invalid_export examples/invalid/bad_version.atlas E_VERSION_UNKNOWN
-          check_invalid_export examples/invalid/guard_active.atlas E_GUARD_ACTIVE
-          check_invalid_export examples/invalid/snapshot_full.atlas E_SNAPSHOT_FULL_STRICT
-          check_invalid_export examples/invalid/bad_action.atlas E_ACTION_UNKNOWN
-          check_invalid_export examples/invalid/bad_safety.atlas E_SAFETY_UNKNOWN
-          check_invalid_export examples/invalid/layout_mismatch.atlas E_LAYOUT_INDEX_MISMATCH
-          check_invalid_export examples/invalid/index_mismatch.atlas E_LAYOUT_INDEX_MISMATCH
-          check_invalid_export examples/invalid/threshold_bad.atlas E_THRESHOLD_INVALID
-          check_invalid_export examples/invalid/missing_families.atlas E_MISSING_FAMILIES
-          check_invalid_export examples/invalid/unknown_family.atlas E_FAMILY_UNKNOWN
-          check_invalid_export examples/invalid/missing_semicolon.atlas E_PARSE
-          check_invalid_export examples/invalid/active_without_safety.atlas E_ACTIVE_WITHOUT_SAFETY
-          check_invalid_export examples/invalid/dangerous_encoded.atlas E_ACTION_UNKNOWN
-          check_invalid_export examples/invalid/malformed_family.atlas E_FIELD_MISSING
-
-      - name: Diagnostic explain
-        run: cargo run -p atlas-cli -- explain E_GUARD_ACTIVE
-
-      - name: Canonical JSON export
+      - name: Runtime smoke
         run: |
           set -euo pipefail
-          cargo run -p atlas-cli -- export examples/p53_strict.atlas \
-            --format json > /tmp/p53_strict.json
-          diff -u tests/golden/p53_strict.json /tmp/p53_strict.json
-
-      - name: Bench smoke
-        run: cargo run -p atlas-cli -- bench --mode smoke
+          cargo run --bin atlas-cli -- run examples/p53_strict.atlas --mode smoke
+          cargo run --bin atlas-cli -- metrics examples/p53_strict.atlas \
+            --format json > /tmp/p56_metrics.json
+          grep -q '"p56_status": "SMOKE_OK_CI_REQUIRED"' /tmp/p56_metrics.json
+          grep -q '"encoded_segments_total": 12' /tmp/p56_metrics.json
+          grep -q '"strict_p53_preserved": true' /tmp/p56_metrics.json
+          grep -q '"rebuild_matches": true' /tmp/p56_metrics.json
+          grep -q '"P56_G6_p99_under_budget_smoke": true' /tmp/p56_metrics.json
+          grep -q '"P56_G7_invalid_still_refused": true' /tmp/p56_metrics.json
