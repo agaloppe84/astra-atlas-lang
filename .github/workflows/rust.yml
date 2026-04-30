@@ -38,6 +38,13 @@ jobs:
             --format json > /tmp/p53_strict.json
           diff -u tests/golden/p53_strict.json /tmp/p53_strict.json
 
+      - name: P57 report
+        run: |
+          set -euo pipefail
+          cargo run --bin atlas-cli -- report examples/p53_strict.atlas \
+            --format json > /tmp/p57_report.json
+          diff -u tests/golden/p57_report.json /tmp/p57_report.json
+
       - name: Invalid .atlas refused
         run: |
           set -euo pipefail

@@ -1,0 +1,9 @@
+
+# ASTRA local Rust environment / local validation
+/target/
+*.log
+/tmp/
+.DS_Store
+
+# If CARGO_TARGET_DIR is accidentally changed inside the repo
+.cargo-target/

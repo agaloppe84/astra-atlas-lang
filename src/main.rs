@@ -1,5 +1,6 @@
 use astra_atlas_lang::{
-    export_json_file, metrics_json_file, run_smoke_file, validate_file, DiagnosticCode,
+    export_json_file, metrics_json_file, p57_report_json_file, run_smoke_file, validate_file,
+    DiagnosticCode,
 };
 use std::env;
 
@@ -38,6 +39,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "export" => export_json_command(args),
         "run" => run_command(args),
         "metrics" => metrics_command(args),
+        "report" => report_command(args),
         "bench" => bench_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
@@ -110,6 +112,18 @@ fn metrics_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn report_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("report requires a .atlas path"))?;
+    if !has_json_format(&args[2..]) {
+        return Err(usage("report requires --format json"));
+    }
+    let json = p57_report_json_file(path).map_err(|diagnostic| diagnostic.to_string())?;
+    println!("{}", json);
+    Ok(())
+}
+
 fn has_json_format(args: &[String]) -> bool {
     matches!(args, [flag, value] if flag.as_str() == "--format" && value.as_str() == "json")
         || matches!(args, [flag] if flag.as_str() == "--format=json")
@@ -145,6 +159,7 @@ fn usage(detail: &str) -> String {
         "  atlas-cli export <file.atlas> --format json",
         "  atlas-cli run <file.atlas> --mode smoke",
         "  atlas-cli metrics <file.atlas> --format json",
+        "  atlas-cli report <file.atlas> --format json",
         "  atlas-cli bench --mode smoke",
     ];
     format!("{}\n{}", detail, commands.join("\n"))

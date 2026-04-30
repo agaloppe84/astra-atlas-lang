@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "status": "template_unvalidated",
+  "astra_iteration": "ASTRA-P57",
+  "repo": "astra-atlas-lang",
+  "commit": null,
+  "branch": null,
+  "validated_at": null,
+  "codespaces": {
+    "cargo_fmt_check": null,
+    "cargo_build_workspace": null,
+    "cargo_test_workspace": null,
+    "valid_examples": null,
+    "invalid_examples": null,
+    "bench_smoke": null,
+    "runtime_smoke": null,
+    "metrics_json": null,
+    "p57_report_json": null
+  },
+  "github_actions": {
+    "status": null,
+    "url": null
+  },
+  "decision": null,
+  "blockers": []
+}
