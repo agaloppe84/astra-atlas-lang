@@ -66,8 +66,12 @@ Le repo reste la surface de validation:
 - tests Rust dans `tests/`;
 - CI dans `.github/workflows/rust.yml`.
 
-Codespaces et GitHub Actions sont les sources de verite pour les validations
-effectives. Le rapport P57 ne remplace pas:
+La validation locale dans un environnement Rust isole sous `/Users/work/Astra`
+est acceptee pendant le developpement quand elle utilise un `CARGO_TARGET_DIR`
+hors repo et conserve seulement des traces synthetiques. GitHub Actions reste
+la source de verite distante finale.
+
+Le rapport P57 ne remplace pas:
 
 - `cargo fmt --all -- --check`;
 - `cargo build --workspace`;

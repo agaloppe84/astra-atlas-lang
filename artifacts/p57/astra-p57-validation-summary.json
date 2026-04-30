@@ -3,6 +3,7 @@
   "timestamp_utc": "2026-04-30T16:20:30Z",
   "git_branch": "main",
   "git_commit_before_final_commit": "7e57d0b0c95ef8b41969981003defe4e4b56d10f",
+  "git_current_p57_commit": "d22b91fb935174765df1a98865a689cb03dd3335",
   "environment": {
     "machine": "Mac M1 / aarch64-apple-darwin",
     "astra_root": "/Users/work/Astra",
@@ -37,8 +38,8 @@
     "p57_report_json": "PASS",
     "invalid_examples_rejected": {
       "status": "PASS",
-      "checked": 13,
-      "rejected": 13
+      "checked": 14,
+      "rejected": 14
     }
   },
   "p57_report": {
@@ -71,11 +72,14 @@
     "external_validation_required": true,
     "astra_p57_decision": "RECALIBRATE_P57"
   },
-  "final_local_status": "LOCAL_PASS_CI_REQUIRED",
-  "github_actions_status": null,
-  "blockers": [
-    "GitHub Actions / remote CI still required",
-    "P57 decision remains RECALIBRATE_P57 until external CI evidence is available"
+  "final_local_status": "LOCAL_PASS_CI_PASS",
+  "validation_trace_status": "LOCAL_PASS_CI_PASS",
+  "github_actions_status": "PASS_USER_REPORTED",
+  "github_actions_url": null,
+  "github_actions_run_id": null,
+  "blockers": [],
+  "notes": [
+    "CLI report decision remains RECALIBRATE_P57 because the CLI report cannot verify or inject CI evidence by itself"
   ],
   "non_blocking_warnings": [
     "src/main.rs is present in multiple bin targets: atlas-cli and atlasc"

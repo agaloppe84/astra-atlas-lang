@@ -4,6 +4,7 @@
 
 - Branch: `main`
 - Commit before final P57 commit: `7e57d0b0c95ef8b41969981003defe4e4b56d10f`
+- Current P57 commit: `d22b91fb935174765df1a98865a689cb03dd3335`
 - Date UTC: `2026-04-30T16:20:30Z`
 
 ## Environment
@@ -33,7 +34,8 @@
 | run examples/p53_strict.atlas --mode smoke | PASS |
 | metrics examples/p53_strict.atlas --format json | PASS |
 | report examples/p53_strict.atlas --format json | PASS |
-| invalid examples rejected | PASS, 13 rejected / 13 checked |
+| invalid examples rejected | PASS, 14 rejected / 14 checked |
+| GitHub Actions CI | PASS_USER_REPORTED |
 
 ## P57 report summary
 
@@ -93,12 +95,26 @@ Checked examples:
 
 ## Final local status
 
-`LOCAL_PASS_CI_REQUIRED`
+`LOCAL_PASS_CI_PASS`
+
+## GitHub Actions status
+
+- Status: `PASS_USER_REPORTED`
+- URL: null
+- Run ID: null
+
+The exact GitHub Actions URL and run ID were not present in the repo trace, so
+they are intentionally left null.
 
 ## Blockers
 
-- GitHub Actions / remote CI still required.
-- P57 decision remains conservative as `RECALIBRATE_P57` until external CI evidence is available.
+- None known from the local validation summary and user-reported GitHub Actions
+  PASS.
+
+## Notes
+
+- CLI report decision remains conservative as `RECALIBRATE_P57` because the CLI
+  report cannot verify or inject CI evidence by itself.
 - Non-blocking warning: `src/main.rs` is present in multiple bin targets, `atlas-cli` and `atlasc`.
 
 ## Files to transmit to ChatGPT
@@ -108,4 +124,4 @@ Checked examples:
 - `docs/astra-p57-reintegration-classique.md`
 - `tests/golden/p57_report.json`
 - final commit hash after push
-- GitHub Actions status
+- GitHub Actions status / URL / run ID if available
