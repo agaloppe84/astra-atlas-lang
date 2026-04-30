@@ -320,11 +320,10 @@ pub fn parse_atlas_str(text: &str) -> AtlasResult<AtlasProgram> {
             continue;
         }
         if !line.ends_with(';') {
-            return Err(Diagnostic::new(
-                DiagnosticCode::ParseError,
-                "missing terminating ';'",
-            )
-            .with_line(line_number));
+            return Err(
+                Diagnostic::new(DiagnosticCode::ParseError, "missing terminating ';'")
+                    .with_line(line_number),
+            );
         }
         let line = &line[..line.len() - 1];
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -519,10 +518,7 @@ pub fn typecheck(program: &AtlasProgram) -> AtlasResult<()> {
         if family.safety != rule.safety {
             return Err(Diagnostic::new(
                 DiagnosticCode::SafetyUnknown,
-                format!(
-                    "family '{}' expects safety='{}'",
-                    family.name, rule.safety
-                ),
+                format!("family '{}' expects safety='{}'", family.name, rule.safety),
             )
             .with_family(family.name.clone())
             .with_field("safety"));
@@ -627,7 +623,10 @@ pub fn canonical_json(program: &AtlasProgram) -> String {
     for (idx, family) in families.iter().enumerate() {
         let comma = if idx + 1 == families.len() { "" } else { "," };
         out.push_str("    {\n");
-        out.push_str(&format!("      \"name\": \"{}\",\n", escape_json(&family.name)));
+        out.push_str(&format!(
+            "      \"name\": \"{}\",\n",
+            escape_json(&family.name)
+        ));
         out.push_str(&format!(
             "      \"action\": \"{}\",\n",
             escape_json(&family.action)
@@ -640,7 +639,10 @@ pub fn canonical_json(program: &AtlasProgram) -> String {
             "      \"layout\": \"{}\",\n",
             escape_json(&family.layout)
         ));
-        out.push_str(&format!("      \"index\": \"{}\",\n", escape_json(&family.index)));
+        out.push_str(&format!(
+            "      \"index\": \"{}\",\n",
+            escape_json(&family.index)
+        ));
         out.push_str(&format!("      \"threshold\": {:.3}\n", family.threshold));
         out.push_str(&format!("    }}{}\n", comma));
     }

@@ -129,7 +129,10 @@ fn invalid_cases() -> [InvalidCase; 14] {
 #[test]
 fn valid_programs_are_accepted() {
     let cases = [
-        ("root p53 strict", include_str!("../examples/p53_strict.atlas")),
+        (
+            "root p53 strict",
+            include_str!("../examples/p53_strict.atlas"),
+        ),
         (
             "valid corpus p53 strict",
             include_str!("../examples/valid/p53_strict.atlas"),
@@ -141,7 +144,10 @@ fn valid_programs_are_accepted() {
         assert_eq!(program.version, "0.1", "{}", name);
         assert_eq!(program.families.len(), 12, "{}", name);
         assert_eq!(
-            program.runtime.get("strict_p53").map(|value| value.as_str()),
+            program
+                .runtime
+                .get("strict_p53")
+                .map(|value| value.as_str()),
             Some("true"),
             "{}",
             name
@@ -171,10 +177,7 @@ fn required_diagnostic_codes_have_stable_strings() {
     let cases = [
         (DiagnosticCode::VersionUnknown, "E_VERSION_UNKNOWN"),
         (DiagnosticCode::GuardActive, "E_GUARD_ACTIVE"),
-        (
-            DiagnosticCode::SnapshotFullStrict,
-            "E_SNAPSHOT_FULL_STRICT",
-        ),
+        (DiagnosticCode::SnapshotFullStrict, "E_SNAPSHOT_FULL_STRICT"),
         (DiagnosticCode::ActionUnknown, "E_ACTION_UNKNOWN"),
         (DiagnosticCode::SafetyUnknown, "E_SAFETY_UNKNOWN"),
         (
@@ -244,7 +247,10 @@ fn strict_p53_is_preserved() {
         Some("incremental_manifest")
     );
     assert_eq!(
-        program.runtime.get("strict_p53").map(|value| value.as_str()),
+        program
+            .runtime
+            .get("strict_p53")
+            .map(|value| value.as_str()),
         Some("true")
     );
 }
@@ -264,8 +270,7 @@ fn snapshot_full_is_refused() {
         .expect_err("snapshot_full must be refused");
     assert_eq!(err.code, DiagnosticCode::SnapshotFullStrict);
     assert_eq!(err.field.as_deref(), Some("snapshot"));
-    assert!(
-        err.message
-            .contains("strict_p53 requires snapshot=incremental_manifest")
-    );
+    assert!(err
+        .message
+        .contains("strict_p53 requires snapshot=incremental_manifest"));
 }

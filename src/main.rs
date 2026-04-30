@@ -55,8 +55,8 @@ fn check_path(path: &str) -> Result<(), String> {
 }
 
 fn explain_code(code: &str) -> Result<(), String> {
-    let diagnostic_code =
-        DiagnosticCode::from_str(code).ok_or_else(|| format!("unknown diagnostic code: {}", code))?;
+    let diagnostic_code = DiagnosticCode::from_str(code)
+        .ok_or_else(|| format!("unknown diagnostic code: {}", code))?;
     println!("{}: {}", diagnostic_code, diagnostic_code.explanation());
     Ok(())
 }
