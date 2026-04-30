@@ -1,9 +1,14 @@
-use std::env;
 use astra_atlas_lang::{parse_atlas_file, typecheck};
+use std::env;
 
 fn main() {
-    let path = env::args().nth(1).unwrap_or_else(|| "examples/p53_strict.atlas".to_string());
-    match parse_atlas_file(&path).and_then(|p| { typecheck(&p)?; Ok(p) }) {
+    let path = env::args()
+        .nth(1)
+        .unwrap_or_else(|| "examples/p53_strict.atlas".to_string());
+    match parse_atlas_file(&path).and_then(|p| {
+        typecheck(&p)?;
+        Ok(p)
+    }) {
         Ok(p) => {
             println!("OK: version={} families={}", p.version, p.families.len());
         }

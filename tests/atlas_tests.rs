@@ -1,4 +1,4 @@
-use astra_atlas_lang::{validate, parse_atlas_str, typecheck};
+use astra_atlas_lang::{parse_atlas_str, validate};
 
 #[test]
 fn valid_program_passes() {
