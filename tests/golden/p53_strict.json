@@ -1,0 +1,107 @@
+{
+  "version": "0.1",
+  "runtime": {
+    "manifest": "compact",
+    "merge": "periodic_compaction",
+    "snapshot": "incremental_manifest",
+    "strict_p53": "true"
+  },
+  "families": [
+    {
+      "name": "guard",
+      "action": "refuse",
+      "safety": "refuse",
+      "layout": "refuse",
+      "index": "none",
+      "threshold": 0.101
+    },
+    {
+      "name": "stream_processing",
+      "action": "stream_delta",
+      "safety": "erasure_light",
+      "layout": "hotcold_segments",
+      "index": "stream_time_index",
+      "threshold": 0.380
+    },
+    {
+      "name": "sparse_index",
+      "action": "sparse_csr",
+      "safety": "erasure_light",
+      "layout": "sparse_blocks",
+      "index": "sparse_csr_index",
+      "threshold": 0.380
+    },
+    {
+      "name": "image_field_surrogate",
+      "action": "wavelet_tile",
+      "safety": "erasure_light",
+      "layout": "wavelet_tiles",
+      "index": "tile_pyramid",
+      "threshold": 0.380
+    },
+    {
+      "name": "log_request_index",
+      "action": "log_trie",
+      "safety": "erasure_light",
+      "layout": "log_trie_nodes",
+      "index": "log_trie_index",
+      "threshold": 0.403
+    },
+    {
+      "name": "columnar_table",
+      "action": "columnar_delta",
+      "safety": "erasure_light",
+      "layout": "columnar_chunks",
+      "index": "columnar_chunk_index",
+      "threshold": 0.380
+    },
+    {
+      "name": "graph_lowrank_surrogate",
+      "action": "low_rank",
+      "safety": "erasure_light",
+      "layout": "lowrank_factors",
+      "index": "lowrank_factor_index",
+      "threshold": 0.380
+    },
+    {
+      "name": "critical_sparse_archive",
+      "action": "sparse_csr",
+      "safety": "mirror_critical",
+      "layout": "sparse_blocks",
+      "index": "sparse_csr_index",
+      "threshold": 0.380
+    },
+    {
+      "name": "compressible_but_wrong",
+      "action": "dict_rom",
+      "safety": "erasure_light",
+      "layout": "dict_pages",
+      "index": "dict_rom_index",
+      "threshold": 0.388
+    },
+    {
+      "name": "field_surrogate",
+      "action": "wavelet_tile",
+      "safety": "erasure_light",
+      "layout": "wavelet_tiles",
+      "index": "tile_pyramid",
+      "threshold": 0.414
+    },
+    {
+      "name": "topological_field",
+      "action": "atlas_sheaf",
+      "safety": "erasure_light",
+      "layout": "atlas_cells",
+      "index": "atlas_sheaf_index",
+      "threshold": 0.361
+    },
+    {
+      "name": "local_global_conflict",
+      "action": "atlas_sheaf",
+      "safety": "erasure_light",
+      "layout": "atlas_cells",
+      "index": "atlas_sheaf_index",
+      "threshold": 0.418
+    }
+  ]
+}

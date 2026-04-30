@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "astra-atlas-lang"
+name = "atlas-cli"
 version = "0.1.0"

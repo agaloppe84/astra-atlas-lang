@@ -9,5 +9,5 @@
       ]
     }
   },
-  "postCreateCommand": "rustc --version && cargo --version && cargo test"
+  "postCreateCommand": "rustc --version && cargo --version && cargo test --workspace"
 }
