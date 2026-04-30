@@ -1,0 +1,44 @@
+name: ASTRA Atlas CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust build and tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Rust versions
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test
+        run: cargo test --verbose
+
+      - name: Valid .atlas accepted
+        run: cargo run -- examples/p53_strict.atlas
+
+      - name: Invalid snapshot_full refused
+        run: |
+          set +e
+          cargo run -- examples/invalid/snapshot_full.atlas > /tmp/atlas_invalid.out 2>&1
+          cat /tmp/atlas_invalid.out
+          if ! grep -q "strict_p53 exige snapshot=incremental_manifest" /tmp/atlas_invalid.out; then
+            echo "Expected strict_p53 snapshot error was not found"
+            exit 1
+          fi
