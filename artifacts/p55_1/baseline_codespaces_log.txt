@@ -1,0 +1,38 @@
+## cargo fmt
+
+## cargo test
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/astra_atlas_lang-c74c4b2e6f6c8054)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/atlasc-90a68d964a76fea5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/atlas_tests.rs (target/debug/deps/atlas_tests-55b7c41ab2b0b0d5)
+
+running 4 tests
+test bad_version_refused ... ok
+test guard_active_refused ... ok
+test snapshot_full_refused ... ok
+test valid_program_passes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests astra_atlas_lang
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+## valid p53
+error: package(s) `atlas-cli` not found in workspace `/workspaces/astra-atlas-lang`
+
+## invalid snapshot_full
+error: package(s) `atlas-cli` not found in workspace `/workspaces/astra-atlas-lang`
