@@ -1,0 +1,150 @@
+{
+  "astra_iteration": "ASTRA-SYS-P58",
+  "atlas_version": "0.1",
+  "mode": "standard",
+  "program_path": "examples/p53_strict.atlas",
+  "strict_p53_enabled": true,
+  "family_count": 12,
+  "active_family_count": 11,
+  "refused_family_count": 1,
+  "workload_count": 11,
+  "workload_family_count": 11,
+  "encoded_segments": 33,
+  "records": 33,
+  "reads": 33,
+  "updates": 11,
+  "snapshots": 1,
+  "rebuilds": 1,
+  "query_success_rate": 1.000,
+  "no_guard_encoded": true,
+  "guard_refused": true,
+  "snapshot_full_refused": true,
+  "runtime_available": true,
+  "metrics_available": true,
+  "report_available": true,
+  "workloads": [
+    {
+      "workload_name": "standard:stream_processing",
+      "target_family": "stream_processing",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "standard:sparse_index",
+      "target_family": "sparse_index",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "standard:image_field_surrogate",
+      "target_family": "image_field_surrogate",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "standard:log_request_index",
+      "target_family": "log_request_index",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "standard:columnar_table",
+      "target_family": "columnar_table",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "standard:graph_lowrank_surrogate",
+      "target_family": "graph_lowrank_surrogate",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "standard:critical_sparse_archive",
+      "target_family": "critical_sparse_archive",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "standard:compressible_but_wrong",
+      "target_family": "compressible_but_wrong",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "recalibrate"
+    },
+    {
+      "workload_name": "standard:field_surrogate",
+      "target_family": "field_surrogate",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "standard:topological_field",
+      "target_family": "topological_field",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "standard:local_global_conflict",
+      "target_family": "local_global_conflict",
+      "records": 3,
+      "reads": 3,
+      "updates": 1,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "frontier"
+    }
+  ],
+  "gates": {
+    "P58_G0_runtime_mode_available": true,
+    "P58_G1_workload_registry_nonempty": true,
+    "P58_G2_standard_covers_active_non_guard_families": true,
+    "P58_G3_guard_not_encoded": true,
+    "P58_G4_query_success_rate_ok": true,
+    "P58_G5_snapshot_rebuild_available": true,
+    "P58_G6_metrics_json_stable": true,
+    "P58_G7_report_generated": true
+  },
+  "decision": "VALIDATE",
+  "warnings": [
+  ]
+}

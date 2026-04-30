@@ -1,6 +1,7 @@
 use astra_atlas_lang::{
-    export_json_file, metrics_json_file, p57_report_json_file, run_smoke_file, validate_file,
-    DiagnosticCode,
+    export_json_file, metrics_json_file, p57_report_json_file, p58_metrics_json_file,
+    p58_report_json_file, p58_report_markdown_file, run_workload_file, validate_file,
+    DiagnosticCode, WorkloadMode,
 };
 use std::env;
 
@@ -83,13 +84,12 @@ fn run_command(args: &[String]) -> Result<(), String> {
     let path = args
         .get(1)
         .ok_or_else(|| usage("run requires a .atlas path"))?;
-    if !has_smoke_mode(&args[2..]) {
-        return Err(usage("run requires --mode smoke"));
-    }
-    let metrics = run_smoke_file(path).map_err(|diagnostic| diagnostic.to_string())?;
+    let mode = parse_required_mode(&args[2..], "run")?;
+    let metrics = run_workload_file(path, mode).map_err(|diagnostic| diagnostic.to_string())?;
     println!(
-        "OK: runtime smoke encoded_segments={} reads={} updates={} \
+        "OK: runtime {} encoded_segments={} reads={} updates={} \
          snapshots={} rebuilds={} success_rate={:.3}",
+        metrics.mode,
         metrics.encoded_segments_total,
         metrics.read_count,
         metrics.update_count,
@@ -104,10 +104,15 @@ fn metrics_command(args: &[String]) -> Result<(), String> {
     let path = args
         .get(1)
         .ok_or_else(|| usage("metrics requires a .atlas path"))?;
-    if !has_json_format(&args[2..]) {
+    let options = parse_options(&args[2..], "metrics")?;
+    if options.format != Some(OutputFormat::Json) {
         return Err(usage("metrics requires --format json"));
     }
-    let json = metrics_json_file(path).map_err(|diagnostic| diagnostic.to_string())?;
+    let json = match options.mode {
+        Some(mode) => p58_metrics_json_file(path, mode),
+        None => metrics_json_file(path),
+    }
+    .map_err(|diagnostic| diagnostic.to_string())?;
     println!("{}", json);
     Ok(())
 }
@@ -116,11 +121,31 @@ fn report_command(args: &[String]) -> Result<(), String> {
     let path = args
         .get(1)
         .ok_or_else(|| usage("report requires a .atlas path"))?;
-    if !has_json_format(&args[2..]) {
-        return Err(usage("report requires --format json"));
+    let options = parse_options(&args[2..], "report")?;
+    let format = options
+        .format
+        .ok_or_else(|| usage("report requires --format json|markdown"))?;
+    match (options.mode, format) {
+        (None, OutputFormat::Json) => {
+            let json = p57_report_json_file(path).map_err(|diagnostic| diagnostic.to_string())?;
+            println!("{}", json);
+        }
+        (None, OutputFormat::Markdown) => {
+            return Err(usage(
+                "report --format markdown requires --mode smoke|standard|ambitious",
+            ));
+        }
+        (Some(mode), OutputFormat::Json) => {
+            let json =
+                p58_report_json_file(path, mode).map_err(|diagnostic| diagnostic.to_string())?;
+            println!("{}", json);
+        }
+        (Some(mode), OutputFormat::Markdown) => {
+            let markdown = p58_report_markdown_file(path, mode)
+                .map_err(|diagnostic| diagnostic.to_string())?;
+            println!("{}", markdown);
+        }
     }
-    let json = p57_report_json_file(path).map_err(|diagnostic| diagnostic.to_string())?;
-    println!("{}", json);
     Ok(())
 }
 
@@ -130,13 +155,12 @@ fn has_json_format(args: &[String]) -> bool {
 }
 
 fn bench_command(args: &[String]) -> Result<(), String> {
-    if !has_smoke_mode(&args[1..]) {
-        return Err(usage("bench requires --mode smoke"));
-    }
-    let metrics =
-        run_smoke_file("examples/p53_strict.atlas").map_err(|diagnostic| diagnostic.to_string())?;
+    let mode = parse_required_mode(&args[1..], "bench")?;
+    let metrics = run_workload_file("examples/p53_strict.atlas", mode)
+        .map_err(|diagnostic| diagnostic.to_string())?;
     println!(
-        "OK: bench smoke encoded_segments={} reads={} updates={} snapshots={} rebuilds={}",
+        "OK: bench {} encoded_segments={} reads={} updates={} snapshots={} rebuilds={}",
+        metrics.mode,
         metrics.encoded_segments_total,
         metrics.read_count,
         metrics.update_count,
@@ -146,21 +170,103 @@ fn bench_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn has_smoke_mode(args: &[String]) -> bool {
-    matches!(args, [flag, value] if flag.as_str() == "--mode" && value.as_str() == "smoke")
-        || matches!(args, [flag] if flag.as_str() == "--mode=smoke")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputFormat {
+    Json,
+    Markdown,
 }
 
-fn usage(detail: &str) -> String {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CommandOptions {
+    mode: Option<WorkloadMode>,
+    format: Option<OutputFormat>,
+}
+
+fn parse_required_mode(args: &[String], command: &str) -> Result<WorkloadMode, String> {
+    let mode = match args {
+        [flag, value] if flag.as_str() == "--mode" => value.as_str(),
+        [flag] if flag.starts_with("--mode=") => flag.trim_start_matches("--mode="),
+        _ => {
+            return Err(usage(format!(
+                "{} requires --mode smoke|standard|ambitious",
+                command
+            )))
+        }
+    };
+    WorkloadMode::from_str(mode).ok_or_else(|| {
+        usage(format!(
+            "{} received unsupported mode '{}'; expected smoke|standard|ambitious",
+            command, mode
+        ))
+    })
+}
+
+fn parse_options(args: &[String], command: &str) -> Result<CommandOptions, String> {
+    let mut mode = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--mode" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage(format!("{} requires a value after --mode", command)))?;
+            mode = Some(parse_mode_value(value, command)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--mode=") {
+            mode = Some(parse_mode_value(value, command)?);
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage(format!("{} requires a value after --format", command)))?;
+            format = Some(parse_format_value(value, command)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, command)?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "{} received unsupported option '{}'",
+                command, arg
+            )));
+        }
+    }
+
+    Ok(CommandOptions { mode, format })
+}
+
+fn parse_mode_value(value: &str, command: &str) -> Result<WorkloadMode, String> {
+    WorkloadMode::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "{} received unsupported mode '{}'; expected smoke|standard|ambitious",
+            command, value
+        ))
+    })
+}
+
+fn parse_format_value(value: &str, command: &str) -> Result<OutputFormat, String> {
+    match value {
+        "json" => Ok(OutputFormat::Json),
+        "markdown" => Ok(OutputFormat::Markdown),
+        _ => Err(usage(format!(
+            "{} received unsupported format '{}'; expected json|markdown",
+            command, value
+        ))),
+    }
+}
+
+fn usage(detail: impl AsRef<str>) -> String {
     let commands = [
         "usage:",
         "  atlas-cli check <file.atlas>",
         "  atlas-cli explain <E_CODE>",
         "  atlas-cli export <file.atlas> --format json",
-        "  atlas-cli run <file.atlas> --mode smoke",
-        "  atlas-cli metrics <file.atlas> --format json",
-        "  atlas-cli report <file.atlas> --format json",
-        "  atlas-cli bench --mode smoke",
+        "  atlas-cli run <file.atlas> --mode smoke|standard|ambitious",
+        "  atlas-cli metrics <file.atlas> [--mode smoke|standard|ambitious] --format json",
+        "  atlas-cli report <file.atlas> [--mode smoke|standard|ambitious] --format json|markdown",
+        "  atlas-cli bench --mode smoke|standard|ambitious",
     ];
-    format!("{}\n{}", detail, commands.join("\n"))
+    format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

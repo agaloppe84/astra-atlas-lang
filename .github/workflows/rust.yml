@@ -76,6 +76,12 @@ jobs:
           check_invalid examples/invalid/active_without_safety.atlas E_ACTIVE_WITHOUT_SAFETY
           check_invalid examples/invalid/dangerous_encoded.atlas E_ACTION_UNKNOWN
           check_invalid examples/invalid/malformed_family.atlas E_FIELD_MISSING
+          check_invalid examples/invalid/duplicate_family.atlas E_FAMILY_DUPLICATE
+          check_invalid examples/invalid/missing_layout.atlas E_FIELD_MISSING
+          check_invalid examples/invalid/unknown_layout.atlas E_LAYOUT_INDEX_MISMATCH
+          check_invalid examples/invalid/unknown_index.atlas E_LAYOUT_INDEX_MISMATCH
+          check_invalid examples/invalid/malformed_threshold.atlas E_THRESHOLD_INVALID
+          check_invalid examples/invalid/threshold_low.atlas E_THRESHOLD_INVALID
 
       - name: Runtime smoke
         run: |
@@ -89,3 +95,17 @@ jobs:
           grep -q '"rebuild_matches": true' /tmp/p56_metrics.json
           grep -q '"P56_G6_p99_under_budget_smoke": true' /tmp/p56_metrics.json
           grep -q '"P56_G7_invalid_still_refused": true' /tmp/p56_metrics.json
+
+      - name: P58 runtime reports
+        run: |
+          set -euo pipefail
+          cargo run --bin atlas-cli -- bench --mode smoke
+          cargo run --bin atlas-cli -- bench --mode standard
+          cargo run --bin atlas-cli -- report examples/p53_strict.atlas \
+            --mode smoke --format json > /tmp/p58_report_smoke.json
+          cargo run --bin atlas-cli -- report examples/p53_strict.atlas \
+            --mode standard --format json > /tmp/p58_report_standard.json
+          diff -u tests/golden/p58_report_smoke.json /tmp/p58_report_smoke.json
+          diff -u tests/golden/p58_report_standard.json /tmp/p58_report_standard.json
+          grep -q '"decision": "RECALIBRATE"' /tmp/p58_report_smoke.json
+          grep -q '"decision": "VALIDATE"' /tmp/p58_report_standard.json

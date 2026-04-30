@@ -1,0 +1,71 @@
+{
+  "astra_iteration": "ASTRA-SYS-P58",
+  "atlas_version": "0.1",
+  "mode": "smoke",
+  "program_path": "examples/p53_strict.atlas",
+  "strict_p53_enabled": true,
+  "family_count": 12,
+  "active_family_count": 11,
+  "refused_family_count": 1,
+  "workload_count": 3,
+  "workload_family_count": 3,
+  "encoded_segments": 12,
+  "records": 12,
+  "reads": 12,
+  "updates": 6,
+  "snapshots": 1,
+  "rebuilds": 1,
+  "query_success_rate": 1.000,
+  "no_guard_encoded": true,
+  "guard_refused": true,
+  "snapshot_full_refused": true,
+  "runtime_available": true,
+  "metrics_available": true,
+  "report_available": true,
+  "workloads": [
+    {
+      "workload_name": "smoke:stream_processing",
+      "target_family": "stream_processing",
+      "records": 4,
+      "reads": 4,
+      "updates": 2,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "smoke:sparse_index",
+      "target_family": "sparse_index",
+      "records": 4,
+      "reads": 4,
+      "updates": 2,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    },
+    {
+      "workload_name": "smoke:columnar_table",
+      "target_family": "columnar_table",
+      "records": 4,
+      "reads": 4,
+      "updates": 2,
+      "snapshots": 1,
+      "rebuilds": 1,
+      "expected_category": "accept"
+    }
+  ],
+  "gates": {
+    "P58_G0_runtime_mode_available": true,
+    "P58_G1_workload_registry_nonempty": true,
+    "P58_G2_standard_covers_active_non_guard_families": false,
+    "P58_G3_guard_not_encoded": true,
+    "P58_G4_query_success_rate_ok": true,
+    "P58_G5_snapshot_rebuild_available": true,
+    "P58_G6_metrics_json_stable": true,
+    "P58_G7_report_generated": true
+  },
+  "decision": "RECALIBRATE",
+  "warnings": [
+    "mode does not cover every active non-guard family"
+  ]
+}

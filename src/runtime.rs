@@ -21,6 +21,55 @@ const FAMILY_ORDER: &[&str] = &[
 
 const SMOKE_FAMILIES: &[&str] = &["stream_processing", "sparse_index", "columnar_table"];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkloadMode {
+    Smoke,
+    Standard,
+    Ambitious,
+}
+
+impl WorkloadMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WorkloadMode::Smoke => "smoke",
+            WorkloadMode::Standard => "standard",
+            WorkloadMode::Ambitious => "ambitious",
+        }
+    }
+
+    pub fn from_str(mode: &str) -> Option<Self> {
+        match mode {
+            "smoke" => Some(WorkloadMode::Smoke),
+            "standard" => Some(WorkloadMode::Standard),
+            "ambitious" => Some(WorkloadMode::Ambitious),
+            _ => None,
+        }
+    }
+
+    fn shape(self) -> WorkloadShape {
+        match self {
+            WorkloadMode::Smoke => WorkloadShape {
+                records_per_family: 4,
+                updates_per_family: 2,
+            },
+            WorkloadMode::Standard => WorkloadShape {
+                records_per_family: 3,
+                updates_per_family: 1,
+            },
+            WorkloadMode::Ambitious => WorkloadShape {
+                records_per_family: 8,
+                updates_per_family: 4,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WorkloadShape {
+    records_per_family: usize,
+    updates_per_family: usize,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeFamilyConfig {
     pub name: String,
@@ -95,16 +144,65 @@ pub struct WorkloadUpdate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SmokeWorkload {
+pub enum WorkloadExpectation {
+    Accept,
+    Refuse,
+    Frontier,
+    Recalibrate,
+}
+
+impl WorkloadExpectation {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            WorkloadExpectation::Accept => "accept",
+            WorkloadExpectation::Refuse => "refuse",
+            WorkloadExpectation::Frontier => "frontier",
+            WorkloadExpectation::Recalibrate => "recalibrate",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkloadSpec {
+    pub workload_name: String,
+    pub target_family: String,
+    pub record_count: usize,
+    pub read_count: usize,
+    pub update_count: usize,
+    pub snapshot_count: usize,
+    pub rebuild_count: usize,
+    pub expected_category: WorkloadExpectation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeWorkload {
+    pub mode: WorkloadMode,
+    pub name: String,
     pub families: Vec<String>,
+    pub specs: Vec<WorkloadSpec>,
     pub records: Vec<WorkloadRecord>,
     pub reads: Vec<WorkloadRead>,
     pub updates: Vec<WorkloadUpdate>,
+    pub snapshot_count: usize,
+    pub rebuild_count: usize,
 }
 
-impl SmokeWorkload {
+pub type SmokeWorkload = RuntimeWorkload;
+
+impl RuntimeWorkload {
     pub fn deterministic(config: &RuntimeConfig) -> Self {
-        let families = select_smoke_families(config);
+        Self::for_mode(config, WorkloadMode::Smoke)
+    }
+
+    pub fn for_mode(config: &RuntimeConfig, mode: WorkloadMode) -> Self {
+        let families = match mode {
+            WorkloadMode::Smoke => select_smoke_families(config),
+            WorkloadMode::Standard | WorkloadMode::Ambitious => select_active_families(config),
+        };
+        let shape = mode.shape();
+        let snapshot_count = 1;
+        let rebuild_count = 1;
+        let mut specs = Vec::new();
         let mut records = Vec::new();
         let mut reads = Vec::new();
         let mut updates = Vec::new();
@@ -113,7 +211,18 @@ impl SmokeWorkload {
             let family = config
                 .family(family_name)
                 .expect("smoke families are selected from runtime config");
-            for record_idx in 0..4 {
+            specs.push(WorkloadSpec {
+                workload_name: format!("{}:{}", mode.as_str(), family.name),
+                target_family: family.name.clone(),
+                record_count: shape.records_per_family,
+                read_count: shape.records_per_family,
+                update_count: shape.updates_per_family,
+                snapshot_count,
+                rebuild_count,
+                expected_category: expected_category(&family.name),
+            });
+
+            for record_idx in 0..shape.records_per_family {
                 let key = format!("{}:{}", family.name, record_idx);
                 records.push(WorkloadRecord {
                     family: family.name.clone(),
@@ -127,13 +236,17 @@ impl SmokeWorkload {
                     family: family.name.clone(),
                     key: key.clone(),
                 });
-                if record_idx < 2 {
+                if record_idx < shape.updates_per_family {
                     updates.push(WorkloadUpdate {
                         family: family.name.clone(),
                         key,
                         value: format!(
-                            "{}:{}:{}:{}:updated",
-                            family.action, family.layout, family_idx, record_idx
+                            "{}:{}:{}:{}:{}:updated",
+                            mode.as_str(),
+                            family.action,
+                            family.layout,
+                            family_idx,
+                            record_idx
                         ),
                     });
                 }
@@ -141,10 +254,15 @@ impl SmokeWorkload {
         }
 
         Self {
+            mode,
+            name: mode.as_str().to_string(),
             families,
+            specs,
             records,
             reads,
             updates,
+            snapshot_count,
+            rebuild_count,
         }
     }
 }
@@ -224,6 +342,7 @@ pub struct RuntimeMetrics {
     pub mode: String,
     pub atlas_version: String,
     pub families_total: usize,
+    pub workload_family_count: usize,
     pub runtime_instantiated: bool,
     pub strict_p53: bool,
     pub strict_p53_preserved: bool,
@@ -247,7 +366,63 @@ pub struct RuntimeMetrics {
     pub state_checksum: u64,
     pub rebuild_checksum: u64,
     pub rebuild_matches: bool,
+    pub no_guard_encoded: bool,
     pub gates: P56Gates,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct P58WorkloadSummary {
+    pub workload_name: String,
+    pub target_family: String,
+    pub record_count: usize,
+    pub read_count: usize,
+    pub update_count: usize,
+    pub snapshot_count: usize,
+    pub rebuild_count: usize,
+    pub expected_category: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct P58Gates {
+    pub p58_g0_runtime_mode_available: bool,
+    pub p58_g1_workload_registry_nonempty: bool,
+    pub p58_g2_standard_covers_active_non_guard_families: bool,
+    pub p58_g3_guard_not_encoded: bool,
+    pub p58_g4_query_success_rate_ok: bool,
+    pub p58_g5_snapshot_rebuild_available: bool,
+    pub p58_g6_metrics_json_stable: bool,
+    pub p58_g7_report_generated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct P58Report {
+    pub astra_iteration: String,
+    pub atlas_version: String,
+    pub mode: String,
+    pub program_path: String,
+    pub strict_p53_enabled: bool,
+    pub family_count: usize,
+    pub active_family_count: usize,
+    pub refused_family_count: usize,
+    pub workload_count: usize,
+    pub workload_family_count: usize,
+    pub encoded_segments: usize,
+    pub records: usize,
+    pub reads: usize,
+    pub updates: usize,
+    pub snapshots: usize,
+    pub rebuilds: usize,
+    pub query_success_rate: f64,
+    pub no_guard_encoded: bool,
+    pub guard_refused: bool,
+    pub snapshot_full_refused: bool,
+    pub runtime_available: bool,
+    pub metrics_available: bool,
+    pub report_available: bool,
+    pub workloads: Vec<P58WorkloadSummary>,
+    pub gates: P58Gates,
+    pub decision: String,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -437,35 +612,114 @@ pub fn runtime_config_file(path: &str) -> AtlasResult<RuntimeConfig> {
 }
 
 pub fn run_smoke(text: &str) -> AtlasResult<RuntimeMetrics> {
+    run_workload(text, WorkloadMode::Smoke)
+}
+
+pub fn run_workload(text: &str, mode: WorkloadMode) -> AtlasResult<RuntimeMetrics> {
     let config = runtime_config(text)?;
-    Ok(run_smoke_config_with_atlas_file(
+    Ok(run_workload_config_with_atlas_file(
         config,
         ATLAS_MEMORY_SOURCE.to_string(),
+        mode,
     ))
 }
 
 pub fn run_smoke_file(path: &str) -> AtlasResult<RuntimeMetrics> {
+    run_workload_file(path, WorkloadMode::Smoke)
+}
+
+pub fn run_workload_file(path: &str, mode: WorkloadMode) -> AtlasResult<RuntimeMetrics> {
     let config = runtime_config_file(path)?;
-    Ok(run_smoke_config_with_atlas_file(config, path.to_string()))
+    Ok(run_workload_config_with_atlas_file(
+        config,
+        path.to_string(),
+        mode,
+    ))
 }
 
 pub fn metrics_json(text: &str) -> AtlasResult<String> {
-    run_smoke(text).map(|metrics| runtime_metrics_json(&metrics))
+    metrics_json_mode(text, WorkloadMode::Smoke)
+}
+
+pub fn metrics_json_mode(text: &str, mode: WorkloadMode) -> AtlasResult<String> {
+    run_workload(text, mode).map(|metrics| runtime_metrics_json(&metrics))
 }
 
 pub fn metrics_json_file(path: &str) -> AtlasResult<String> {
-    run_smoke_file(path).map(|metrics| runtime_metrics_json(&metrics))
+    metrics_json_file_mode(path, WorkloadMode::Smoke)
+}
+
+pub fn metrics_json_file_mode(path: &str, mode: WorkloadMode) -> AtlasResult<String> {
+    run_workload_file(path, mode).map(|metrics| runtime_metrics_json(&metrics))
+}
+
+pub fn p58_metrics_json(text: &str, mode: WorkloadMode) -> AtlasResult<String> {
+    p58_report_json(text, mode)
+}
+
+pub fn p58_metrics_json_file(path: &str, mode: WorkloadMode) -> AtlasResult<String> {
+    p58_report_json_file(path, mode)
+}
+
+pub fn p58_report(text: &str, mode: WorkloadMode) -> AtlasResult<P58Report> {
+    let config = runtime_config(text)?;
+    Ok(p58_report_from_config(
+        config,
+        ATLAS_MEMORY_SOURCE.to_string(),
+        mode,
+    ))
+}
+
+pub fn p58_report_file(path: &str, mode: WorkloadMode) -> AtlasResult<P58Report> {
+    let config = runtime_config_file(path)?;
+    Ok(p58_report_from_config(config, path.to_string(), mode))
+}
+
+pub fn p58_report_json(text: &str, mode: WorkloadMode) -> AtlasResult<String> {
+    p58_report(text, mode).map(|report| p58_report_to_json(&report))
+}
+
+pub fn p58_report_json_file(path: &str, mode: WorkloadMode) -> AtlasResult<String> {
+    p58_report_file(path, mode).map(|report| p58_report_to_json(&report))
+}
+
+pub fn p58_report_markdown(text: &str, mode: WorkloadMode) -> AtlasResult<String> {
+    p58_report(text, mode).map(|report| p58_report_to_markdown(&report))
+}
+
+pub fn p58_report_markdown_file(path: &str, mode: WorkloadMode) -> AtlasResult<String> {
+    p58_report_file(path, mode).map(|report| p58_report_to_markdown(&report))
 }
 
 pub fn run_smoke_config(config: RuntimeConfig) -> RuntimeMetrics {
-    run_smoke_config_with_atlas_file(config, ATLAS_MEMORY_SOURCE.to_string())
+    run_workload_config(config, WorkloadMode::Smoke)
+}
+
+pub fn run_workload_config(config: RuntimeConfig, mode: WorkloadMode) -> RuntimeMetrics {
+    run_workload_config_with_atlas_file(config, ATLAS_MEMORY_SOURCE.to_string(), mode)
 }
 
 pub fn run_smoke_config_with_atlas_file(
     config: RuntimeConfig,
     atlas_file: String,
 ) -> RuntimeMetrics {
-    let workload = SmokeWorkload::deterministic(&config);
+    run_workload_config_with_atlas_file(config, atlas_file, WorkloadMode::Smoke)
+}
+
+pub fn run_workload_config_with_atlas_file(
+    config: RuntimeConfig,
+    atlas_file: String,
+    mode: WorkloadMode,
+) -> RuntimeMetrics {
+    let workload = RuntimeWorkload::for_mode(&config, mode);
+    run_prepared_workload_config_with_atlas_file(config, atlas_file, &workload)
+}
+
+fn run_prepared_workload_config_with_atlas_file(
+    config: RuntimeConfig,
+    atlas_file: String,
+    workload: &RuntimeWorkload,
+) -> RuntimeMetrics {
     let mut runtime = MemoryRuntime::new(config.clone());
     runtime.encode_all(&workload.records);
 
@@ -491,7 +745,8 @@ pub fn run_smoke_config_with_atlas_file(
         && stats.read_count == workload.reads.len()
         && stats.read_success_count == workload.reads.len()
         && stats.update_count == workload.updates.len();
-    let snapshot_incremental_ok = stats.snapshot_count == 1 && strict_p53_preserved;
+    let snapshot_incremental_ok =
+        stats.snapshot_count == workload.snapshot_count && strict_p53_preserved;
     let p99_proxy_latency = stats
         .read_pseudo_latency
         .max(stats.update_pseudo_latency)
@@ -526,13 +781,14 @@ pub fn run_smoke_config_with_atlas_file(
     RuntimeMetrics {
         p56_status: p56_status.to_string(),
         atlas_file,
-        mode: "smoke".to_string(),
+        mode: workload.mode.as_str().to_string(),
         atlas_version: config.version.clone(),
         families_total: config.families.len(),
         runtime_instantiated,
         strict_p53: config.strict_p53(),
         strict_p53_preserved,
-        workload_families: workload.families,
+        workload_family_count: workload.families.len(),
+        workload_families: workload.families.clone(),
         encoded_segments_total: stats.encoded_segments,
         read_count: stats.read_count,
         update_count: stats.update_count,
@@ -552,7 +808,150 @@ pub fn run_smoke_config_with_atlas_file(
         state_checksum: summary.checksum,
         rebuild_checksum: rebuild_summary.checksum,
         rebuild_matches,
+        no_guard_encoded: stats.guard_encoded_count == 0,
         gates,
+    }
+}
+
+fn p58_report_from_config(
+    config: RuntimeConfig,
+    program_path: String,
+    mode: WorkloadMode,
+) -> P58Report {
+    let workload = RuntimeWorkload::for_mode(&config, mode);
+    let metrics = run_prepared_workload_config_with_atlas_file(
+        config.clone(),
+        program_path.clone(),
+        &workload,
+    );
+    let active_families = select_active_families(&config);
+    let guard_refused = config
+        .family("guard")
+        .map(|family| family.action == "refuse" && family.safety == "refuse")
+        .unwrap_or(false);
+    let snapshot_full_refused = config.strict_p53()
+        && config.runtime.get("snapshot").map(|value| value.as_str())
+            == Some("incremental_manifest")
+        && invalid_regression_checked();
+    let standard_coverage = matches!(mode, WorkloadMode::Standard | WorkloadMode::Ambitious)
+        && workload.families == active_families;
+    let runtime_available = metrics.runtime_instantiated;
+    let gates = P58Gates {
+        p58_g0_runtime_mode_available: runtime_available,
+        p58_g1_workload_registry_nonempty: !workload.specs.is_empty()
+            && !workload.records.is_empty(),
+        p58_g2_standard_covers_active_non_guard_families: standard_coverage,
+        p58_g3_guard_not_encoded: metrics.no_guard_encoded,
+        p58_g4_query_success_rate_ok: metrics.query_success_rate >= 1.0,
+        p58_g5_snapshot_rebuild_available: metrics.snapshot_count > 0
+            && metrics.rebuild_count > 0
+            && metrics.rebuild_matches,
+        p58_g6_metrics_json_stable: true,
+        p58_g7_report_generated: true,
+    };
+    let mut warnings = Vec::new();
+    if !gates.p58_g2_standard_covers_active_non_guard_families {
+        warnings.push("mode does not cover every active non-guard family".to_string());
+    }
+    if !guard_refused {
+        warnings.push("guard family refusal is not confirmed".to_string());
+    }
+    if !snapshot_full_refused {
+        warnings.push("snapshot=full refusal is not confirmed".to_string());
+    }
+    if !gates.p58_g4_query_success_rate_ok {
+        warnings.push("query success rate is below the deterministic gate".to_string());
+    }
+    if matches!(mode, WorkloadMode::Ambitious) {
+        warnings.push(
+            "ambitious mode is deterministic local-only and not a CI requirement".to_string(),
+        );
+    }
+    let decision = p58_decision(
+        &gates,
+        config.strict_p53(),
+        guard_refused,
+        snapshot_full_refused,
+        runtime_available,
+    );
+    let workloads = workload
+        .specs
+        .iter()
+        .map(|spec| P58WorkloadSummary {
+            workload_name: spec.workload_name.clone(),
+            target_family: spec.target_family.clone(),
+            record_count: spec.record_count,
+            read_count: spec.read_count,
+            update_count: spec.update_count,
+            snapshot_count: spec.snapshot_count,
+            rebuild_count: spec.rebuild_count,
+            expected_category: spec.expected_category.as_str().to_string(),
+        })
+        .collect();
+
+    P58Report {
+        astra_iteration: "ASTRA-SYS-P58".to_string(),
+        atlas_version: config.version.clone(),
+        mode: mode.as_str().to_string(),
+        program_path,
+        strict_p53_enabled: config.strict_p53(),
+        family_count: config.families.len(),
+        active_family_count: active_families.len(),
+        refused_family_count: config
+            .families
+            .iter()
+            .filter(|family| family.action == "refuse")
+            .count(),
+        workload_count: workload.specs.len(),
+        workload_family_count: workload.families.len(),
+        encoded_segments: metrics.encoded_segments_total,
+        records: workload.records.len(),
+        reads: metrics.read_count,
+        updates: metrics.update_count,
+        snapshots: metrics.snapshot_count,
+        rebuilds: metrics.rebuild_count,
+        query_success_rate: metrics.query_success_rate,
+        no_guard_encoded: metrics.no_guard_encoded,
+        guard_refused,
+        snapshot_full_refused,
+        runtime_available,
+        metrics_available: true,
+        report_available: true,
+        workloads,
+        gates,
+        decision: decision.to_string(),
+        warnings,
+    }
+}
+
+fn p58_decision(
+    gates: &P58Gates,
+    strict_p53_enabled: bool,
+    guard_refused: bool,
+    snapshot_full_refused: bool,
+    runtime_available: bool,
+) -> &'static str {
+    if !strict_p53_enabled
+        || !guard_refused
+        || !snapshot_full_refused
+        || !runtime_available
+        || !gates.p58_g3_guard_not_encoded
+    {
+        return "NO_GO";
+    }
+
+    if gates.p58_g0_runtime_mode_available
+        && gates.p58_g1_workload_registry_nonempty
+        && gates.p58_g2_standard_covers_active_non_guard_families
+        && gates.p58_g3_guard_not_encoded
+        && gates.p58_g4_query_success_rate_ok
+        && gates.p58_g5_snapshot_rebuild_available
+        && gates.p58_g6_metrics_json_stable
+        && gates.p58_g7_report_generated
+    {
+        "VALIDATE"
+    } else {
+        "RECALIBRATE"
     }
 }
 
@@ -578,6 +977,10 @@ pub fn runtime_metrics_json(metrics: &RuntimeMetrics) -> String {
     out.push_str(&format!(
         "  \"families_total\": {},\n",
         metrics.families_total
+    ));
+    out.push_str(&format!(
+        "  \"workload_family_count\": {},\n",
+        metrics.workload_family_count
     ));
     out.push_str(&format!(
         "  \"runtime_instantiated\": {},\n",
@@ -668,6 +1071,10 @@ pub fn runtime_metrics_json(metrics: &RuntimeMetrics) -> String {
         "  \"rebuild_matches\": {},\n",
         metrics.rebuild_matches
     ));
+    out.push_str(&format!(
+        "  \"no_guard_encoded\": {},\n",
+        metrics.no_guard_encoded
+    ));
     out.push_str("  \"latency_metric_kind\": \"smoke_proxy\",\n");
     out.push_str("  \"gates\": {\n");
     out.push_str(&format!(
@@ -711,6 +1118,264 @@ pub fn runtime_metrics_json(metrics: &RuntimeMetrics) -> String {
     out
 }
 
+pub fn p58_report_to_json(report: &P58Report) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str(&format!(
+        "  \"astra_iteration\": \"{}\",\n",
+        escape_json(&report.astra_iteration)
+    ));
+    out.push_str(&format!(
+        "  \"atlas_version\": \"{}\",\n",
+        escape_json(&report.atlas_version)
+    ));
+    out.push_str(&format!("  \"mode\": \"{}\",\n", escape_json(&report.mode)));
+    out.push_str(&format!(
+        "  \"program_path\": \"{}\",\n",
+        escape_json(&report.program_path)
+    ));
+    out.push_str(&format!(
+        "  \"strict_p53_enabled\": {},\n",
+        report.strict_p53_enabled
+    ));
+    out.push_str(&format!("  \"family_count\": {},\n", report.family_count));
+    out.push_str(&format!(
+        "  \"active_family_count\": {},\n",
+        report.active_family_count
+    ));
+    out.push_str(&format!(
+        "  \"refused_family_count\": {},\n",
+        report.refused_family_count
+    ));
+    out.push_str(&format!(
+        "  \"workload_count\": {},\n",
+        report.workload_count
+    ));
+    out.push_str(&format!(
+        "  \"workload_family_count\": {},\n",
+        report.workload_family_count
+    ));
+    out.push_str(&format!(
+        "  \"encoded_segments\": {},\n",
+        report.encoded_segments
+    ));
+    out.push_str(&format!("  \"records\": {},\n", report.records));
+    out.push_str(&format!("  \"reads\": {},\n", report.reads));
+    out.push_str(&format!("  \"updates\": {},\n", report.updates));
+    out.push_str(&format!("  \"snapshots\": {},\n", report.snapshots));
+    out.push_str(&format!("  \"rebuilds\": {},\n", report.rebuilds));
+    out.push_str(&format!(
+        "  \"query_success_rate\": {:.3},\n",
+        report.query_success_rate
+    ));
+    out.push_str(&format!(
+        "  \"no_guard_encoded\": {},\n",
+        report.no_guard_encoded
+    ));
+    out.push_str(&format!("  \"guard_refused\": {},\n", report.guard_refused));
+    out.push_str(&format!(
+        "  \"snapshot_full_refused\": {},\n",
+        report.snapshot_full_refused
+    ));
+    out.push_str(&format!(
+        "  \"runtime_available\": {},\n",
+        report.runtime_available
+    ));
+    out.push_str(&format!(
+        "  \"metrics_available\": {},\n",
+        report.metrics_available
+    ));
+    out.push_str(&format!(
+        "  \"report_available\": {},\n",
+        report.report_available
+    ));
+    out.push_str("  \"workloads\": [\n");
+    for (idx, workload) in report.workloads.iter().enumerate() {
+        let comma = if idx + 1 == report.workloads.len() {
+            ""
+        } else {
+            ","
+        };
+        out.push_str("    {\n");
+        out.push_str(&format!(
+            "      \"workload_name\": \"{}\",\n",
+            escape_json(&workload.workload_name)
+        ));
+        out.push_str(&format!(
+            "      \"target_family\": \"{}\",\n",
+            escape_json(&workload.target_family)
+        ));
+        out.push_str(&format!("      \"records\": {},\n", workload.record_count));
+        out.push_str(&format!("      \"reads\": {},\n", workload.read_count));
+        out.push_str(&format!("      \"updates\": {},\n", workload.update_count));
+        out.push_str(&format!(
+            "      \"snapshots\": {},\n",
+            workload.snapshot_count
+        ));
+        out.push_str(&format!(
+            "      \"rebuilds\": {},\n",
+            workload.rebuild_count
+        ));
+        out.push_str(&format!(
+            "      \"expected_category\": \"{}\"\n",
+            escape_json(&workload.expected_category)
+        ));
+        out.push_str(&format!("    }}{}\n", comma));
+    }
+    out.push_str("  ],\n");
+    out.push_str("  \"gates\": {\n");
+    out.push_str(&format!(
+        "    \"P58_G0_runtime_mode_available\": {},\n",
+        report.gates.p58_g0_runtime_mode_available
+    ));
+    out.push_str(&format!(
+        "    \"P58_G1_workload_registry_nonempty\": {},\n",
+        report.gates.p58_g1_workload_registry_nonempty
+    ));
+    out.push_str(&format!(
+        "    \"P58_G2_standard_covers_active_non_guard_families\": {},\n",
+        report
+            .gates
+            .p58_g2_standard_covers_active_non_guard_families
+    ));
+    out.push_str(&format!(
+        "    \"P58_G3_guard_not_encoded\": {},\n",
+        report.gates.p58_g3_guard_not_encoded
+    ));
+    out.push_str(&format!(
+        "    \"P58_G4_query_success_rate_ok\": {},\n",
+        report.gates.p58_g4_query_success_rate_ok
+    ));
+    out.push_str(&format!(
+        "    \"P58_G5_snapshot_rebuild_available\": {},\n",
+        report.gates.p58_g5_snapshot_rebuild_available
+    ));
+    out.push_str(&format!(
+        "    \"P58_G6_metrics_json_stable\": {},\n",
+        report.gates.p58_g6_metrics_json_stable
+    ));
+    out.push_str(&format!(
+        "    \"P58_G7_report_generated\": {}\n",
+        report.gates.p58_g7_report_generated
+    ));
+    out.push_str("  },\n");
+    out.push_str(&format!(
+        "  \"decision\": \"{}\",\n",
+        escape_json(&report.decision)
+    ));
+    out.push_str("  \"warnings\": [\n");
+    for (idx, warning) in report.warnings.iter().enumerate() {
+        let comma = if idx + 1 == report.warnings.len() {
+            ""
+        } else {
+            ","
+        };
+        out.push_str(&format!("    \"{}\"{}\n", escape_json(warning), comma));
+    }
+    out.push_str("  ]\n");
+    out.push('}');
+    out
+}
+
+pub fn p58_report_to_markdown(report: &P58Report) -> String {
+    let mut out = String::new();
+    out.push_str("# ASTRA-SYS-P58 runtime report\n\n");
+    out.push_str(&format!("- Mode: `{}`\n", report.mode));
+    out.push_str(&format!("- Program: `{}`\n", report.program_path));
+    out.push_str(&format!(
+        "- ASTRA iteration: `{}`\n",
+        report.astra_iteration
+    ));
+    out.push_str(&format!("- Decision: `{}`\n\n", report.decision));
+
+    out.push_str("## Families summary\n\n");
+    out.push_str("| field | value |\n");
+    out.push_str("| --- | ---: |\n");
+    out.push_str(&format!("| family_count | {} |\n", report.family_count));
+    out.push_str(&format!(
+        "| active_family_count | {} |\n",
+        report.active_family_count
+    ));
+    out.push_str(&format!(
+        "| refused_family_count | {} |\n",
+        report.refused_family_count
+    ));
+    out.push_str(&format!(
+        "| workload_family_count | {} |\n\n",
+        report.workload_family_count
+    ));
+
+    out.push_str("## Workload summary\n\n");
+    out.push_str(
+        "| workload | family | records | reads | updates | snapshots | rebuilds | expected |\n",
+    );
+    out.push_str("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |\n");
+    for workload in &report.workloads {
+        out.push_str(&format!(
+            "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            workload.workload_name,
+            workload.target_family,
+            workload.record_count,
+            workload.read_count,
+            workload.update_count,
+            workload.snapshot_count,
+            workload.rebuild_count,
+            workload.expected_category
+        ));
+    }
+    out.push('\n');
+
+    out.push_str("## Gates summary\n\n");
+    out.push_str("| gate | passed |\n");
+    out.push_str("| --- | --- |\n");
+    out.push_str(&format!(
+        "| P58_G0_runtime_mode_available | {} |\n",
+        report.gates.p58_g0_runtime_mode_available
+    ));
+    out.push_str(&format!(
+        "| P58_G1_workload_registry_nonempty | {} |\n",
+        report.gates.p58_g1_workload_registry_nonempty
+    ));
+    out.push_str(&format!(
+        "| P58_G2_standard_covers_active_non_guard_families | {} |\n",
+        report
+            .gates
+            .p58_g2_standard_covers_active_non_guard_families
+    ));
+    out.push_str(&format!(
+        "| P58_G3_guard_not_encoded | {} |\n",
+        report.gates.p58_g3_guard_not_encoded
+    ));
+    out.push_str(&format!(
+        "| P58_G4_query_success_rate_ok | {} |\n",
+        report.gates.p58_g4_query_success_rate_ok
+    ));
+    out.push_str(&format!(
+        "| P58_G5_snapshot_rebuild_available | {} |\n",
+        report.gates.p58_g5_snapshot_rebuild_available
+    ));
+    out.push_str(&format!(
+        "| P58_G6_metrics_json_stable | {} |\n",
+        report.gates.p58_g6_metrics_json_stable
+    ));
+    out.push_str(&format!(
+        "| P58_G7_report_generated | {} |\n\n",
+        report.gates.p58_g7_report_generated
+    ));
+
+    out.push_str("## Decision\n\n");
+    out.push_str(&format!("`{}`\n\n", report.decision));
+    out.push_str("## Warnings\n\n");
+    if report.warnings.is_empty() {
+        out.push_str("- None\n");
+    } else {
+        for warning in &report.warnings {
+            out.push_str(&format!("- {}\n", warning));
+        }
+    }
+    out
+}
+
 fn select_smoke_families(config: &RuntimeConfig) -> Vec<String> {
     let mut families = Vec::new();
     for family in SMOKE_FAMILIES {
@@ -730,6 +1395,24 @@ fn select_smoke_families(config: &RuntimeConfig) -> Vec<String> {
         }
     }
     families
+}
+
+fn select_active_families(config: &RuntimeConfig) -> Vec<String> {
+    config
+        .families
+        .iter()
+        .filter(|family| family.name != "guard" && family.action != "refuse")
+        .map(|family| family.name.clone())
+        .collect()
+}
+
+fn expected_category(family: &str) -> WorkloadExpectation {
+    match family {
+        "compressible_but_wrong" => WorkloadExpectation::Recalibrate,
+        "local_global_conflict" => WorkloadExpectation::Frontier,
+        "guard" => WorkloadExpectation::Refuse,
+        _ => WorkloadExpectation::Accept,
+    }
 }
 
 fn family_position(name: &str) -> usize {

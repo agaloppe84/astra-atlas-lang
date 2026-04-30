@@ -1,4 +1,6 @@
 use astra_atlas_lang::{canonical_json, export_json, validate, DiagnosticCode};
+use std::fs;
+use std::path::Path;
 
 struct InvalidCase {
     name: &'static str,
@@ -9,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 14] {
+fn invalid_cases() -> [InvalidCase; 20] {
     [
         InvalidCase {
             name: "bad_version",
@@ -123,6 +125,54 @@ fn invalid_cases() -> [InvalidCase; 14] {
             field: Some("name"),
             message: "family name is missing",
         },
+        InvalidCase {
+            name: "duplicate_family",
+            text: include_str!("../examples/invalid/duplicate_family.atlas"),
+            code: DiagnosticCode::FamilyDuplicate,
+            family: Some("stream_processing"),
+            field: None,
+            message: "duplicate family",
+        },
+        InvalidCase {
+            name: "missing_layout",
+            text: include_str!("../examples/invalid/missing_layout.atlas"),
+            code: DiagnosticCode::FieldMissing,
+            family: Some("stream_processing"),
+            field: Some("layout"),
+            message: "required key 'layout' is missing",
+        },
+        InvalidCase {
+            name: "unknown_layout",
+            text: include_str!("../examples/invalid/unknown_layout.atlas"),
+            code: DiagnosticCode::LayoutIndexMismatch,
+            family: Some("stream_processing"),
+            field: Some("layout"),
+            message: "expects action",
+        },
+        InvalidCase {
+            name: "unknown_index",
+            text: include_str!("../examples/invalid/unknown_index.atlas"),
+            code: DiagnosticCode::LayoutIndexMismatch,
+            family: Some("stream_processing"),
+            field: Some("index"),
+            message: "expects action",
+        },
+        InvalidCase {
+            name: "malformed_threshold",
+            text: include_str!("../examples/invalid/malformed_threshold.atlas"),
+            code: DiagnosticCode::ThresholdInvalid,
+            family: Some("stream_processing"),
+            field: Some("threshold"),
+            message: "not a finite number",
+        },
+        InvalidCase {
+            name: "threshold_low",
+            text: include_str!("../examples/invalid/threshold_low.atlas"),
+            code: DiagnosticCode::ThresholdInvalid,
+            family: Some("stream_processing"),
+            field: Some("threshold"),
+            message: "outside",
+        },
     ]
 }
 
@@ -173,6 +223,30 @@ fn invalid_programs_are_refused_with_expected_codes() {
 }
 
 #[test]
+fn all_invalid_corpus_files_are_refused() {
+    let invalid_dir = Path::new("examples/invalid");
+    let mut paths: Vec<_> = fs::read_dir(invalid_dir)
+        .expect("invalid examples dir")
+        .map(|entry| entry.expect("invalid dir entry").path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("atlas"))
+        .collect();
+    paths.sort();
+
+    assert_eq!(
+        paths.len(),
+        invalid_cases().len(),
+        "stable diagnostic coverage should track every invalid corpus file"
+    );
+
+    for path in paths {
+        let text = fs::read_to_string(&path).expect("invalid example text");
+        if validate(&text).is_ok() {
+            panic!("{} should be refused", path.display());
+        }
+    }
+}
+
+#[test]
 fn required_diagnostic_codes_have_stable_strings() {
     let cases = [
         (DiagnosticCode::VersionUnknown, "E_VERSION_UNKNOWN"),
@@ -187,6 +261,7 @@ fn required_diagnostic_codes_have_stable_strings() {
         (DiagnosticCode::ThresholdInvalid, "E_THRESHOLD_INVALID"),
         (DiagnosticCode::MissingFamilies, "E_MISSING_FAMILIES"),
         (DiagnosticCode::FamilyUnknown, "E_FAMILY_UNKNOWN"),
+        (DiagnosticCode::FamilyDuplicate, "E_FAMILY_DUPLICATE"),
         (DiagnosticCode::FieldMissing, "E_FIELD_MISSING"),
         (DiagnosticCode::ParseError, "E_PARSE"),
         (
