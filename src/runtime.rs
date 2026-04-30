@@ -483,10 +483,7 @@ pub fn run_smoke_config_with_atlas_file(
     let stats = runtime.stats();
     let rebuild_stats = rebuilt.stats();
     let strict_p53_preserved = config.strict_p53()
-        && config
-            .runtime
-            .get("snapshot")
-            .map(|value| value.as_str())
+        && config.runtime.get("snapshot").map(|value| value.as_str())
             == Some("incremental_manifest");
     let invalid_regression_checked = invalid_regression_checked();
     let runtime_instantiated = true;
@@ -570,7 +567,10 @@ pub fn runtime_metrics_json(metrics: &RuntimeMetrics) -> String {
         "  \"atlas_file\": \"{}\",\n",
         escape_json(&metrics.atlas_file)
     ));
-    out.push_str(&format!("  \"mode\": \"{}\",\n", escape_json(&metrics.mode)));
+    out.push_str(&format!(
+        "  \"mode\": \"{}\",\n",
+        escape_json(&metrics.mode)
+    ));
     out.push_str(&format!(
         "  \"atlas_version\": \"{}\",\n",
         escape_json(&metrics.atlas_version)
@@ -608,7 +608,10 @@ pub fn runtime_metrics_json(metrics: &RuntimeMetrics) -> String {
         "  \"snapshot_count\": {},\n",
         metrics.snapshot_count
     ));
-    out.push_str(&format!("  \"rebuild_count\": {},\n", metrics.rebuild_count));
+    out.push_str(&format!(
+        "  \"rebuild_count\": {},\n",
+        metrics.rebuild_count
+    ));
     out.push_str(&format!(
         "  \"read_pseudo_latency\": {},\n",
         metrics.read_pseudo_latency
