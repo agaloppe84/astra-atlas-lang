@@ -1,0 +1,15 @@
+atlas version=0.1;
+runtime strict_p53=true snapshot=incremental_manifest merge=periodic_compaction manifest=compact;
+# family <name> action=<action> safety=<safety> layout=<layout> index=<index> threshold=<float>;
+family guard action=sparse_csr safety=erasure_light layout=sparse_blocks index=sparse_csr_index threshold=0.101;
+family stream_processing action=stream_delta safety=erasure_light layout=hotcold_segments index=stream_time_index threshold=0.380;
+family sparse_index action=sparse_csr safety=erasure_light layout=sparse_blocks index=sparse_csr_index threshold=0.380;
+family image_field_surrogate action=wavelet_tile safety=erasure_light layout=wavelet_tiles index=tile_pyramid threshold=0.380;
+family log_request_index action=log_trie safety=erasure_light layout=log_trie_nodes index=log_trie_index threshold=0.403;
+family columnar_table action=columnar_delta safety=erasure_light layout=columnar_chunks index=columnar_chunk_index threshold=0.380;
+family graph_lowrank_surrogate action=low_rank safety=erasure_light layout=lowrank_factors index=lowrank_factor_index threshold=0.380;
+family critical_sparse_archive action=sparse_csr safety=mirror_critical layout=sparse_blocks index=sparse_csr_index threshold=0.380;
+family compressible_but_wrong action=dict_rom safety=erasure_light layout=dict_pages index=dict_rom_index threshold=0.388;
+family field_surrogate action=wavelet_tile safety=erasure_light layout=wavelet_tiles index=tile_pyramid threshold=0.414;
+family topological_field action=atlas_sheaf safety=erasure_light layout=atlas_cells index=atlas_sheaf_index threshold=0.361;
+family local_global_conflict action=atlas_sheaf safety=erasure_light layout=atlas_cells index=atlas_sheaf_index threshold=0.418;

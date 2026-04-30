@@ -1,0 +1,14 @@
+[package]
+name = "astra-atlas-lang"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal ASTRA .atlas parser/typechecker/runtime skeleton for procedural memory programs"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "astra_atlas_lang"
+path = "src/lib.rs"
+
+[[bin]]
+name = "atlasc"
+path = "src/main.rs"
