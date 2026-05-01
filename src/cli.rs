@@ -1,8 +1,8 @@
 use crate::{
     bench_report_json, export_json_file, metrics_json_file, p57_report_json_file,
     p58_metrics_json_file, p58_report_json_file, p58_report_markdown_file,
-    p61_virtual_ratio_report_json_file, p62_real_ratio_report_json_file, run_workload_file,
-    validate_file, DiagnosticCode, WorkloadMode,
+    p61_virtual_ratio_report_json_file, p62_real_ratio_report_json_file_with_runs,
+    run_workload_file, validate_file, DiagnosticCode, WorkloadMode,
 };
 use std::env;
 
@@ -211,8 +211,9 @@ fn ratio_real_command(args: &[String]) -> Result<(), String> {
     if options.format != Some(OutputFormat::Json) {
         return Err(usage("ratio-real requires --format json"));
     }
-    let json =
-        p62_real_ratio_report_json_file(path, mode).map_err(|diagnostic| diagnostic.to_string())?;
+    let runs = options.runs.unwrap_or(1);
+    let json = p62_real_ratio_report_json_file_with_runs(path, mode, runs)
+        .map_err(|diagnostic| diagnostic.to_string())?;
     println!("{}", json);
     Ok(())
 }
@@ -227,6 +228,7 @@ enum OutputFormat {
 struct CommandOptions {
     mode: Option<WorkloadMode>,
     format: Option<OutputFormat>,
+    runs: Option<usize>,
 }
 
 fn parse_required_mode(args: &[String], command: &str) -> Result<WorkloadMode, String> {
@@ -251,6 +253,7 @@ fn parse_required_mode(args: &[String], command: &str) -> Result<WorkloadMode, S
 fn parse_options(args: &[String], command: &str) -> Result<CommandOptions, String> {
     let mut mode = None;
     let mut format = None;
+    let mut runs = None;
     let mut idx = 0;
 
     while idx < args.len() {
@@ -273,6 +276,21 @@ fn parse_options(args: &[String], command: &str) -> Result<CommandOptions, Strin
         } else if let Some(value) = arg.strip_prefix("--format=") {
             format = Some(parse_format_value(value, command)?);
             idx += 1;
+        } else if arg == "--runs" && command == "ratio-real" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-real requires a value after --runs"))?;
+            runs = Some(parse_runs_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--runs=") {
+            if command != "ratio-real" {
+                return Err(usage(format!(
+                    "{} received unsupported option '{}'",
+                    command, arg
+                )));
+            }
+            runs = Some(parse_runs_value(value)?);
+            idx += 1;
         } else {
             return Err(usage(format!(
                 "{} received unsupported option '{}'",
@@ -281,7 +299,7 @@ fn parse_options(args: &[String], command: &str) -> Result<CommandOptions, Strin
         }
     }
 
-    Ok(CommandOptions { mode, format })
+    Ok(CommandOptions { mode, format, runs })
 }
 
 fn parse_mode_value(value: &str, command: &str) -> Result<WorkloadMode, String> {
@@ -304,6 +322,16 @@ fn parse_format_value(value: &str, command: &str) -> Result<OutputFormat, String
     }
 }
 
+fn parse_runs_value(value: &str) -> Result<usize, String> {
+    let runs = value
+        .parse::<usize>()
+        .map_err(|_| usage(format!("ratio-real received invalid --runs '{}'", value)))?;
+    if runs == 0 {
+        return Err(usage("ratio-real requires --runs greater than zero"));
+    }
+    Ok(runs)
+}
+
 fn usage(detail: impl AsRef<str>) -> String {
     let commands = [
         "usage:",
@@ -315,7 +343,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli report <file.atlas> [--mode smoke|standard|ambitious] --format json|markdown",
         "  atlas-cli bench --mode smoke|standard|ambitious [--format json]",
         "  atlas-cli ratio <file.atlas> --mode smoke|standard|ambitious --format json",
-        "  atlas-cli ratio-real <file.atlas> --mode smoke|standard|ambitious --format json",
+        "  atlas-cli ratio-real <file.atlas> --mode smoke|standard|ambitious --format json [--runs N]",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

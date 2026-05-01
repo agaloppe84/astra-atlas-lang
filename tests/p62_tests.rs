@@ -1,6 +1,6 @@
 use astra_atlas_lang::{
     p61_virtual_ratio_report_json_file, p62_real_ratio_report_file,
-    p62_real_ratio_report_json_file, WorkloadMode,
+    p62_real_ratio_report_file_with_runs, p62_real_ratio_report_json_file, WorkloadMode,
 };
 use std::process::Command;
 
@@ -13,7 +13,11 @@ fn p62_ratio_real_smoke_report_has_measured_schema() {
     assert_eq!(report.cost_model, "measured_real_v1");
     assert_eq!(report.measurement_kind, "real_wall_clock_and_filesystem");
     assert_eq!(report.iteration_count, 100);
+    assert_eq!(report.repeat_count, 1);
     assert_eq!(report.warmup_count, 10);
+    assert_eq!(report.operation_count, 100);
+    assert_eq!(report.summary.run_count, 1);
+    assert_eq!(report.runs.len(), 1);
     assert_eq!(
         report.decision.as_str(),
         "RECALIBRATE_P62_MEASUREMENT_MODEL"
@@ -21,17 +25,65 @@ fn p62_ratio_real_smoke_report_has_measured_schema() {
 }
 
 #[test]
-fn p62_timing_fields_are_measured_and_non_zero_for_smoke() {
-    let report = p62_real_ratio_report_file("examples/p53_strict.atlas", WorkloadMode::Smoke)
-        .expect("p62 smoke report");
+fn p62_ratio_real_smoke_supports_repeated_runs() {
+    let report =
+        p62_real_ratio_report_file_with_runs("examples/p53_strict.atlas", WorkloadMode::Smoke, 3)
+            .expect("p62 repeated smoke report");
 
-    assert!(report.create_timing.p50_us > 0);
-    assert!(report.read_timing.p50_us > 0);
-    assert!(report.update_timing.p50_us > 0);
-    assert!(report.delete_timing.p50_us > 0);
-    assert!(report.snapshot_timing.p50_us > 0);
-    assert!(report.rebuild_timing.p50_us > 0);
-    assert!(report.audit_timing.p50_us > 0);
+    assert_eq!(report.repeat_count, 3);
+    assert_eq!(report.summary.run_count, 3);
+    assert_eq!(report.runs.len(), 3);
+    assert!(report.summary.all_runs_passed);
+    assert_eq!(
+        report.decision.as_str(),
+        "RECALIBRATE_P62_MEASUREMENT_MODEL"
+    );
+    for (idx, run) in report.runs.iter().enumerate() {
+        assert_eq!(run.run_index, idx);
+        assert!(run.run_id.contains(&format!(":{}", idx)));
+        assert!(run.total_persisted_bytes > 0);
+        assert!(run.ratio_effective_per_byte > 0.0);
+    }
+}
+
+#[test]
+fn p62_repeated_summary_orders_key_fields() {
+    let report =
+        p62_real_ratio_report_file_with_runs("examples/p53_strict.atlas", WorkloadMode::Smoke, 3)
+            .expect("p62 repeated smoke report");
+    let summary = report.summary;
+
+    assert!(summary.total_persisted_bytes_min <= summary.total_persisted_bytes_median);
+    assert!(summary.total_persisted_bytes_median <= summary.total_persisted_bytes_max);
+    assert!(summary.ratio_effective_per_byte_min <= summary.ratio_effective_per_byte_median);
+    assert!(summary.ratio_effective_per_byte_median <= summary.ratio_effective_per_byte_max);
+    assert!(summary.read_p99_us_min <= summary.read_p99_us_median);
+    assert!(summary.read_p99_us_median <= summary.read_p99_us_max);
+    assert!(summary.update_p99_us_min <= summary.update_p99_us_median);
+    assert!(summary.update_p99_us_median <= summary.update_p99_us_max);
+    assert!(summary.snapshot_p99_us_min <= summary.snapshot_p99_us_median);
+    assert!(summary.snapshot_p99_us_median <= summary.snapshot_p99_us_max);
+    assert!(summary.rebuild_p99_us_min <= summary.rebuild_p99_us_median);
+    assert!(summary.rebuild_p99_us_median <= summary.rebuild_p99_us_max);
+    assert!(summary.audit_p99_us_min <= summary.audit_p99_us_median);
+    assert!(summary.audit_p99_us_median <= summary.audit_p99_us_max);
+}
+
+#[test]
+fn p62_timing_fields_are_measured_and_non_zero_for_smoke() {
+    let report =
+        p62_real_ratio_report_file_with_runs("examples/p53_strict.atlas", WorkloadMode::Smoke, 3)
+            .expect("p62 smoke report");
+
+    for run in &report.runs {
+        assert!(run.create_timing.p50_us > 0);
+        assert!(run.read_timing.p50_us > 0);
+        assert!(run.update_timing.p50_us > 0);
+        assert!(run.delete_timing.p50_us > 0);
+        assert!(run.snapshot_timing.p50_us > 0);
+        assert!(run.rebuild_timing.p50_us > 0);
+        assert!(run.audit_timing.p50_us > 0);
+    }
 }
 
 #[test]
@@ -124,6 +176,29 @@ fn p62_ratio_real_cli_smoke_json_succeeds() {
 }
 
 #[test]
+fn p62_ratio_real_cli_smoke_json_with_runs_succeeds() {
+    let output = Command::new(env!("CARGO_BIN_EXE_atlas-cli"))
+        .args([
+            "ratio-real",
+            "examples/p53_strict.atlas",
+            "--mode",
+            "smoke",
+            "--format",
+            "json",
+            "--runs",
+            "3",
+        ])
+        .output()
+        .expect("run p62 ratio-real cli with runs");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"repeat_count\": 3"));
+    assert!(stdout.contains("\"run_count\": 3"));
+    assert!(stdout.contains("\"runs\": ["));
+}
+
+#[test]
 fn p62_ratio_real_rejects_invalid_mode_and_format() {
     let bad_mode = Command::new(env!("CARGO_BIN_EXE_atlas-cli"))
         .args([
@@ -157,6 +232,27 @@ fn p62_ratio_real_rejects_invalid_mode_and_format() {
 }
 
 #[test]
+fn p62_ratio_real_rejects_invalid_runs_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_atlas-cli"))
+        .args([
+            "ratio-real",
+            "examples/p53_strict.atlas",
+            "--mode",
+            "smoke",
+            "--format",
+            "json",
+            "--runs",
+            "0",
+        ])
+        .output()
+        .expect("run p62 bad runs");
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("ratio-real requires --runs greater than zero"));
+}
+
+#[test]
 fn p62_keeps_p61_smoke_golden_stable() {
     let json = p61_virtual_ratio_report_json_file("examples/p53_strict.atlas", WorkloadMode::Smoke)
         .expect("p61 smoke report");
@@ -171,6 +267,9 @@ fn p62_json_contains_required_top_level_fields() {
         .expect("p62 smoke json");
 
     assert!(json.contains("\"create_p50_us\":"));
+    assert!(json.contains("\"repeat_count\": 1"));
+    assert!(json.contains("\"summary\": {"));
+    assert!(json.contains("\"runs\": ["));
     assert!(json.contains("\"read_p99_us\":"));
     assert!(json.contains("\"snapshot_file_bytes\":"));
     assert!(json.contains("\"total_persisted_bytes\":"));

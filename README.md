@@ -19,7 +19,7 @@ cargo run -p atlas-cli -- bench --mode smoke
 cargo run -p atlas-cli -- bench --mode standard
 cargo run -p atlas-cli -- bench --mode standard --format json
 cargo run -p atlas-cli -- ratio examples/p53_strict.atlas --mode smoke --format json
-cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json --runs 3
 ```
 
 After `cargo build`, the same CLI is available as `atlas-cli`. The `atlasc`
@@ -71,6 +71,6 @@ proxy, sans revendication de validation scientifique. Voir
 
 ## Validation P62 mesure reelle
 
-P62 ajoute une commande locale `ratio-real` qui mesure des timings `Instant` et
-des tailles de fichiers temporaires reelles, sans golden de timing. Voir
+P62 ajoute une commande locale `ratio-real --runs N` qui mesure des timings
+`Instant` et des tailles de fichiers temporaires reelles, sans golden de timing. Voir
 [docs/validation/astra-p62-real-measurement-plan.md](docs/validation/astra-p62-real-measurement-plan.md).

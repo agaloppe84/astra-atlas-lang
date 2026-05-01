@@ -13,12 +13,13 @@ not change the P61 smoke golden.
 
 ```bash
 cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json --runs 3
 ```
 
 `standard` is available locally:
 
 ```bash
-cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard --format json
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard --format json --runs 5
 ```
 
 The `ratio-real` command is intentionally separate from `ratio` so P61 remains
@@ -37,6 +38,25 @@ stable and proxy-based.
 Temporary files are removed after each run. No real timing golden is stored
 because timing values are machine-local and variable.
 
+## Single Run vs Repeated Run
+
+Without `--runs`, `ratio-real` performs one measured run. With `--runs N`, it
+performs `N` independent measured runs, each with its own temporary persistence
+directory, timings, byte counts, audit, rebuild, and snapshot roundtrip.
+
+The JSON report exposes:
+
+- `repeat_count`;
+- `operation_count` per run;
+- a `measurement_id`;
+- `timestamp: null` for now, because stable timestamp policy is not fixed yet;
+- `summary`;
+- `runs`.
+
+The `summary` section reports min/median/max values for persisted bytes,
+`ratio_effective_per_byte`, and key p99 timings. This makes local comparisons
+more useful without pretending the measurements are globally calibrated.
+
 ## Report Scope
 
 The P62 report includes:
@@ -51,6 +71,7 @@ The P62 report includes:
 - CRUD and system operation counts;
 - safety and roundtrip gates;
 - conservative decision status.
+- explicit `decision_reasons`.
 
 ## Interpretation
 
@@ -76,13 +97,16 @@ cargo build --workspace
 cargo test --workspace
 bash scripts/validate_p58_local.sh
 cargo run -p atlas-cli -- ratio examples/p53_strict.atlas --mode smoke --format json
-cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json --runs 3
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard --format json --runs 5
 ```
 
 ## Next Steps
 
-- repeat measurements across runs and machines;
-- add optional machine/run metadata;
+- calibrate thresholds from repeated runs;
+- externalize optional artifacts for debugging without committing large files;
+- add a compact CSV/JSONL export if repeated-run analysis needs it;
+- add richer machine/run metadata;
 - calibrate thresholds for measured ratios;
 - strengthen update/delete semantics;
 - decide later whether any P62 smoke check belongs in CI.
