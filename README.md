@@ -19,6 +19,7 @@ cargo run -p atlas-cli -- bench --mode smoke
 cargo run -p atlas-cli -- bench --mode standard
 cargo run -p atlas-cli -- bench --mode standard --format json
 cargo run -p atlas-cli -- ratio examples/p53_strict.atlas --mode smoke --format json
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json
 ```
 
 After `cargo build`, the same CLI is available as `atlas-cli`. The `atlasc`
@@ -67,3 +68,9 @@ P61 introduit un laboratoire deterministe et conservateur pour le ratio virtuel
 effectif `virtual_effective / real_total_cost_units`. Le modele de cout reste un
 proxy, sans revendication de validation scientifique. Voir
 [docs/validation_p61_virtual_ratio_lab.md](docs/validation_p61_virtual_ratio_lab.md).
+
+## Validation P62 mesure reelle
+
+P62 ajoute une commande locale `ratio-real` qui mesure des timings `Instant` et
+des tailles de fichiers temporaires reelles, sans golden de timing. Voir
+[docs/validation/astra-p62-real-measurement-plan.md](docs/validation/astra-p62-real-measurement-plan.md).

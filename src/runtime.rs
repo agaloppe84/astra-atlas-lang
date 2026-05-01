@@ -512,6 +512,13 @@ impl MemoryRuntime {
         true
     }
 
+    pub fn delete(&mut self, family: &str, key: &str) -> bool {
+        self.stores
+            .get_mut(family)
+            .and_then(|store| store.remove(key))
+            .is_some()
+    }
+
     pub fn snapshot(&mut self) -> MemorySnapshot {
         self.stats.snapshot_count += 1;
         self.stats.snapshot_pseudo_latency +=
