@@ -2,8 +2,9 @@ use crate::{
     bench_report_json, export_json_file, metrics_json_file, p57_report_json_file,
     p58_metrics_json_file, p58_report_json_file, p58_report_markdown_file,
     p61_virtual_ratio_report_json_file, p62_real_ratio_report_json_file_with_runs,
-    p63_campaign_compare_json_files, p63_campaign_report_file_with_runs,
-    p63_campaign_report_to_json, run_workload_file, validate_file, write_p63_campaign_exports,
+    p63_campaign_compare_json_files, p63_campaign_register_json_file,
+    p63_campaign_report_file_with_runs, p63_campaign_report_to_json,
+    p63_campaign_summary_json_file, run_workload_file, validate_file, write_p63_campaign_exports,
     DiagnosticCode, P63ThresholdProfile, WorkloadMode,
 };
 use std::env;
@@ -48,6 +49,8 @@ fn run(args: &[String]) -> Result<(), String> {
         "ratio" => ratio_command(args),
         "ratio-real" => ratio_real_command(args),
         "ratio-campaign-compare" => ratio_campaign_compare_command(args),
+        "ratio-campaign-register" => ratio_campaign_register_command(args),
+        "ratio-campaign-summary" => ratio_campaign_summary_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -252,6 +255,30 @@ fn ratio_campaign_compare_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn ratio_campaign_register_command(args: &[String]) -> Result<(), String> {
+    let report_path = args
+        .get(1)
+        .ok_or_else(|| usage("ratio-campaign-register requires a campaign report path"))?;
+    let options = parse_campaign_register_options(&args[2..])?;
+    let json = p63_campaign_register_json_file(report_path, &options.registry, &options.name)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    println!("{}", json);
+    Ok(())
+}
+
+fn ratio_campaign_summary_command(args: &[String]) -> Result<(), String> {
+    let registry_path = args
+        .get(1)
+        .ok_or_else(|| usage("ratio-campaign-summary requires a registry path"))?;
+    if !has_json_format(&args[2..]) {
+        return Err(usage("ratio-campaign-summary requires --format json"));
+    }
+    let json = p63_campaign_summary_json_file(registry_path)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    println!("{}", json);
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -265,6 +292,12 @@ struct CommandOptions {
     runs: Option<usize>,
     export_dir: Option<String>,
     threshold_profile: Option<P63ThresholdProfile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CampaignRegisterOptions {
+    registry: String,
+    name: String,
 }
 
 fn parse_required_mode(args: &[String], command: &str) -> Result<WorkloadMode, String> {
@@ -415,6 +448,59 @@ fn parse_threshold_profile_value(value: &str) -> Result<P63ThresholdProfile, Str
     })
 }
 
+fn parse_campaign_register_options(args: &[String]) -> Result<CampaignRegisterOptions, String> {
+    let mut registry = None;
+    let mut name = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--registry" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-campaign-register requires a value after --registry")
+            })?;
+            registry = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--registry=") {
+            registry = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--name" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-campaign-register requires a value after --name"))?;
+            name = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--name=") {
+            name = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-campaign-register requires a value after --format"))?;
+            format = Some(parse_format_value(value, "ratio-campaign-register")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "ratio-campaign-register")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "ratio-campaign-register received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    if format != Some(OutputFormat::Json) {
+        return Err(usage("ratio-campaign-register requires --format json"));
+    }
+    Ok(CampaignRegisterOptions {
+        registry: registry
+            .ok_or_else(|| usage("ratio-campaign-register requires --registry <path>"))?,
+        name: name.ok_or_else(|| usage("ratio-campaign-register requires --name <name>"))?,
+    })
+}
+
 fn usage(detail: impl AsRef<str>) -> String {
     let commands = [
         "usage:",
@@ -428,6 +514,8 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli ratio <file.atlas> --mode smoke|standard|ambitious --format json",
         "  atlas-cli ratio-real <file.atlas> --mode smoke|standard|ambitious --format json [--runs N] [--export-dir <path> --threshold-profile p63]",
         "  atlas-cli ratio-campaign-compare <campaign-a.json> <campaign-b.json> --format json",
+        "  atlas-cli ratio-campaign-register <campaign.json> --registry <registry.json> --name <campaign-name> --format json",
+        "  atlas-cli ratio-campaign-summary <registry.json> --format json",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

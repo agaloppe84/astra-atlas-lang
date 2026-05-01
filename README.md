@@ -89,3 +89,7 @@ Le premier export compact de campagne P63 s'active avec
 `campaign_report.json`, `runs.jsonl`, `runs.csv` et `summary.md` localement.
 Le profil `p63` resout vers `p63_conservative_v1`, et les campagnes peuvent etre
 comparees avec `ratio-campaign-compare`.
+
+Prompt P63 ajoute aussi un registre local ignore par Git:
+`ratio-campaign-register <campaign_report.json> --registry artifacts/p63/registry.json --name <name> --format json`,
+puis `ratio-campaign-summary artifacts/p63/registry.json --format json`.

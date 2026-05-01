@@ -64,10 +64,19 @@ The initial profile is intentionally conservative:
 - `require_campaign_exports = true`
 - `require_realish_workloads = false`
 - `allow_validate = false`
+- `candidate_min_runs_for_future_validation = 30`
+- `candidate_max_ratio_cv = 0.03`
+- `candidate_max_bytes_cv = 0.03`
+- `candidate_max_intra_mode_ratio_shift_percent = 5.0`
+- `candidate_max_intra_mode_bytes_shift_percent = 5.0`
 
 `allow_validate = false` prevents
 `VALIDATE_P63_MEASURED_RATIO_CALIBRATION` even when an internal campaign looks
 stable. This keeps P63 honest until thresholds and workloads are calibrated.
+
+The candidate thresholds are informational only. They document a future
+calibration direction, but they do not enable validation and do not override
+`allow_validate = false`.
 
 ## Metrics To Add Later
 
@@ -199,8 +208,68 @@ cargo run -p atlas-cli -- ratio-campaign-compare \
 
 The comparison reports median ratio and byte shifts, profile compatibility,
 mode compatibility, stability summaries and an informational comparison
-decision. Different modes are reported as `DIFFERENT_MODES`; deltas are still
-emitted, but they are not regression claims.
+decision.
+
+Same mode and same threshold profile campaigns are reported as
+`SAME_MODE_COMPARABLE` and include:
+
+- `stability_delta`;
+- `decision_compatibility`;
+- `intra_mode_status`.
+
+Intra-mode statuses are:
+
+- `INTRA_MODE_STABLE`
+- `INTRA_MODE_WARN`
+- `INTRA_MODE_UNSTABLE`
+- `INTRA_MODE_NOT_ENOUGH_DATA`
+
+Different modes are reported as `DIFFERENT_MODES_INFORMATIONAL`; deltas are
+still emitted, but they are not regression claims.
+
+## Campaign Registry
+
+Prompt Codex 4 adds a compact local registry for campaigns:
+
+```bash
+cargo run -p atlas-cli -- ratio-campaign-register \
+  artifacts/p63/standard_001/campaign_report.json \
+  --registry artifacts/p63/registry.json \
+  --name standard_local_001 \
+  --format json
+```
+
+The registry stores compact metadata only:
+
+- `registry_version`;
+- `astra_step = P63`;
+- campaign name and id;
+- mode and threshold profile;
+- report path;
+- repeat count;
+- median ratio and byte totals;
+- campaign stability;
+- decision;
+- compact machine metadata;
+- git commit when available.
+
+Generated registries under `artifacts/p63/` are local analysis artifacts and are
+ignored by git.
+
+## Campaign Registry Summary
+
+Prompt Codex 4 also adds a compact JSON summary:
+
+```bash
+cargo run -p atlas-cli -- ratio-campaign-summary \
+  artifacts/p63/registry.json \
+  --format json
+```
+
+The summary reports campaign count, modes, profiles, decisions, per-campaign
+median ratios, warnings and a conservative recommendation. It is intended for
+quick local analysis and for updating the durable Markdown analysis report, not
+for storing raw logs.
 
 ## Analysis Reports
 

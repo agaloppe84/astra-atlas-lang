@@ -2,6 +2,7 @@ use crate::{
     p62_real_ratio_report_file_with_runs, AtlasResult, Diagnostic, DiagnosticCode, P62MeasuredRun,
     P62RealRatioReport, WorkloadMode,
 };
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -42,6 +43,11 @@ impl P63ThresholdProfile {
                 require_campaign_exports: true,
                 require_realish_workloads: false,
                 allow_validate: false,
+                candidate_min_runs_for_future_validation: 30,
+                candidate_max_ratio_cv: 0.03,
+                candidate_max_bytes_cv: 0.03,
+                candidate_max_intra_mode_ratio_shift_percent: 5.0,
+                candidate_max_intra_mode_bytes_shift_percent: 5.0,
             },
         }
     }
@@ -60,6 +66,11 @@ pub struct P63ThresholdProfileSpec {
     pub require_campaign_exports: bool,
     pub require_realish_workloads: bool,
     pub allow_validate: bool,
+    pub candidate_min_runs_for_future_validation: usize,
+    pub candidate_max_ratio_cv: f64,
+    pub candidate_max_bytes_cv: f64,
+    pub candidate_max_intra_mode_ratio_shift_percent: f64,
+    pub candidate_max_intra_mode_bytes_shift_percent: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -348,6 +359,18 @@ pub fn p63_campaign_compare_json(
     let ratio_shift_percent = percent_shift(parsed_a.median_ratio, parsed_b.median_ratio);
     let bytes_shift = parsed_b.median_bytes - parsed_a.median_bytes;
     let bytes_shift_percent = percent_shift(parsed_a.median_bytes, parsed_b.median_bytes);
+    let stability_delta = format!("{} -> {}", parsed_a.stability, parsed_b.stability);
+    let decision_compatibility = if parsed_a.decision == parsed_b.decision {
+        "SAME_DECISION"
+    } else {
+        "DIFFERENT_DECISION"
+    };
+    let intra_mode_status = intra_mode_status(
+        compatibility_status,
+        ratio_shift_percent,
+        bytes_shift_percent,
+        parsed_a.decision == parsed_b.decision,
+    );
     let interpretation = comparison_interpretation(compatibility_status);
     let comparison_decision = comparison_decision(compatibility_status);
 
@@ -391,6 +414,19 @@ pub fn p63_campaign_compare_json(
     out.push_str(&json_string("decision_b", &parsed_b.decision, true, 2));
     out.push_str(&json_string("stability_a", &parsed_a.stability, true, 2));
     out.push_str(&json_string("stability_b", &parsed_b.stability, true, 2));
+    out.push_str(&json_string("stability_delta", &stability_delta, true, 2));
+    out.push_str(&json_string(
+        "decision_compatibility",
+        decision_compatibility,
+        true,
+        2,
+    ));
+    out.push_str(&json_string(
+        "intra_mode_status",
+        intra_mode_status,
+        true,
+        2,
+    ));
     out.push_str(&json_string(
         "compatibility_status",
         compatibility_status.as_str(),
@@ -406,6 +442,320 @@ pub fn p63_campaign_compare_json(
     ));
     out.push_str("}\n");
     out
+}
+
+pub fn p63_campaign_register_json_file(
+    report_path: &str,
+    registry_path: &str,
+    campaign_name: &str,
+) -> AtlasResult<String> {
+    let report = fs::read_to_string(report_path)
+        .map_err(|err| io_diagnostic(format!("read campaign report {:?}: {}", report_path, err)))?;
+    let entry = P63CampaignRegistryEntry::from_report(report_path, campaign_name, &report);
+    if !entry.valid {
+        return Err(Diagnostic::new(
+            DiagnosticCode::ParseError,
+            "ratio-campaign-register requires a valid P63 campaign_report.json",
+        ));
+    }
+
+    let mut campaigns = if Path::new(registry_path).exists() {
+        let registry = fs::read_to_string(registry_path)
+            .map_err(|err| io_diagnostic(format!("read registry {:?}: {}", registry_path, err)))?;
+        parse_registry_entries(&registry)
+    } else {
+        Vec::new()
+    };
+    campaigns.retain(|existing| {
+        existing.campaign_id != entry.campaign_id && existing.campaign_name != entry.campaign_name
+    });
+    campaigns.push(entry);
+    campaigns.sort_by(|a, b| a.campaign_name.cmp(&b.campaign_name));
+
+    let registry_json = p63_campaign_registry_to_json(&campaigns);
+    if let Some(parent) = Path::new(registry_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|err| {
+                io_diagnostic(format!("create registry dir {:?}: {}", parent, err))
+            })?;
+        }
+    }
+    write_string(Path::new(registry_path), &registry_json)?;
+    Ok(registry_json)
+}
+
+pub fn p63_campaign_summary_json_file(registry_path: &str) -> AtlasResult<String> {
+    let registry = fs::read_to_string(registry_path)
+        .map_err(|err| io_diagnostic(format!("read registry {:?}: {}", registry_path, err)))?;
+    let campaigns = parse_registry_entries(&registry);
+    Ok(p63_campaign_registry_summary_json(&campaigns))
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct P63CampaignRegistryEntry {
+    pub valid: bool,
+    pub campaign_id: String,
+    pub campaign_name: String,
+    pub mode: String,
+    pub threshold_profile: String,
+    pub report_path: String,
+    pub repeat_count: usize,
+    pub median_ratio_effective_per_byte: f64,
+    pub median_total_persisted_bytes: f64,
+    pub campaign_stability_status: String,
+    pub decision: String,
+    pub timestamp_utc: String,
+    pub machine_os: String,
+    pub machine_arch: String,
+    pub machine_cpu_count: Option<usize>,
+    pub git_commit: String,
+}
+
+impl P63CampaignRegistryEntry {
+    fn from_report(report_path: &str, campaign_name: &str, json: &str) -> Self {
+        let threshold_profile = extract_json_string(json, "threshold_profile_resolved")
+            .or_else(|| extract_json_string(json, "threshold_profile"))
+            .unwrap_or_default();
+        let entry = Self {
+            valid: true,
+            campaign_id: extract_json_string(json, "campaign_id").unwrap_or_default(),
+            campaign_name: campaign_name.to_string(),
+            mode: extract_json_string(json, "mode").unwrap_or_default(),
+            threshold_profile,
+            report_path: report_path.to_string(),
+            repeat_count: extract_json_number(json, "repeat_count").unwrap_or(0.0) as usize,
+            median_ratio_effective_per_byte: extract_metric_median(
+                json,
+                "ratio_effective_per_byte",
+            )
+            .unwrap_or(0.0),
+            median_total_persisted_bytes: extract_metric_median(json, "total_persisted_bytes")
+                .unwrap_or(0.0),
+            campaign_stability_status: extract_json_string(json, "campaign_stability_status")
+                .unwrap_or_default(),
+            decision: extract_json_string(json, "decision").unwrap_or_default(),
+            timestamp_utc: extract_json_string(json, "timestamp_utc").unwrap_or_default(),
+            machine_os: extract_json_string(json, "os").unwrap_or_else(|| "unknown".to_string()),
+            machine_arch: extract_json_string(json, "arch")
+                .unwrap_or_else(|| "unknown".to_string()),
+            machine_cpu_count: extract_json_number(json, "cpu_count").map(|value| value as usize),
+            git_commit: extract_json_string(json, "git_commit")
+                .unwrap_or_else(|| "unknown".to_string()),
+        };
+        if entry.campaign_id.is_empty()
+            || entry.mode.is_empty()
+            || entry.threshold_profile.is_empty()
+            || entry.decision.is_empty()
+            || entry.campaign_stability_status.is_empty()
+        {
+            return Self {
+                valid: false,
+                ..entry
+            };
+        }
+        entry
+    }
+
+    fn from_registry_json(json: &str) -> Option<Self> {
+        let entry = Self {
+            valid: true,
+            campaign_id: extract_json_string(json, "campaign_id")?,
+            campaign_name: extract_json_string(json, "campaign_name")?,
+            mode: extract_json_string(json, "mode")?,
+            threshold_profile: extract_json_string(json, "threshold_profile")?,
+            report_path: extract_json_string(json, "report_path")?,
+            repeat_count: extract_json_number(json, "repeat_count")? as usize,
+            median_ratio_effective_per_byte: extract_json_number(
+                json,
+                "median_ratio_effective_per_byte",
+            )?,
+            median_total_persisted_bytes: extract_json_number(
+                json,
+                "median_total_persisted_bytes",
+            )?,
+            campaign_stability_status: extract_json_string(json, "campaign_stability_status")?,
+            decision: extract_json_string(json, "decision")?,
+            timestamp_utc: extract_json_string(json, "timestamp_utc")?,
+            machine_os: extract_json_string(json, "os").unwrap_or_else(|| "unknown".to_string()),
+            machine_arch: extract_json_string(json, "arch")
+                .unwrap_or_else(|| "unknown".to_string()),
+            machine_cpu_count: extract_json_number(json, "cpu_count").map(|value| value as usize),
+            git_commit: extract_json_string(json, "git_commit")
+                .unwrap_or_else(|| "unknown".to_string()),
+        };
+        Some(entry)
+    }
+}
+
+fn p63_campaign_registry_to_json(campaigns: &[P63CampaignRegistryEntry]) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str(&json_string("registry_version", "p63_registry_v1", true, 2));
+    out.push_str(&json_string("astra_step", "P63", true, 2));
+    out.push_str("  \"campaigns\": [\n");
+    for (idx, campaign) in campaigns.iter().enumerate() {
+        out.push_str(&indent_json(&registry_entry_json(campaign), 4));
+        out.push_str(&format!("{}\n", comma(idx, campaigns.len())));
+    }
+    out.push_str("  ]\n");
+    out.push_str("}\n");
+    out
+}
+
+fn registry_entry_json(entry: &P63CampaignRegistryEntry) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str(&json_string("campaign_id", &entry.campaign_id, true, 2));
+    out.push_str(&json_string("campaign_name", &entry.campaign_name, true, 2));
+    out.push_str(&json_string("mode", &entry.mode, true, 2));
+    out.push_str(&json_string(
+        "threshold_profile",
+        &entry.threshold_profile,
+        true,
+        2,
+    ));
+    out.push_str(&json_string("report_path", &entry.report_path, true, 2));
+    out.push_str(&json_usize("repeat_count", entry.repeat_count, true, 2));
+    out.push_str(&json_f64(
+        "median_ratio_effective_per_byte",
+        entry.median_ratio_effective_per_byte,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "median_total_persisted_bytes",
+        entry.median_total_persisted_bytes,
+        true,
+        2,
+    ));
+    out.push_str(&json_string(
+        "campaign_stability_status",
+        &entry.campaign_stability_status,
+        true,
+        2,
+    ));
+    out.push_str(&json_string("decision", &entry.decision, true, 2));
+    out.push_str(&json_string("timestamp_utc", &entry.timestamp_utc, true, 2));
+    out.push_str("  \"machine_metadata\": {\n");
+    out.push_str(&json_string("os", &entry.machine_os, true, 4));
+    out.push_str(&json_string("arch", &entry.machine_arch, true, 4));
+    match entry.machine_cpu_count {
+        Some(cpu_count) => out.push_str(&json_usize("cpu_count", cpu_count, false, 4)),
+        None => out.push_str("    \"cpu_count\": null\n"),
+    }
+    out.push_str("  },\n");
+    out.push_str(&json_string("git_commit", &entry.git_commit, false, 2));
+    out.push_str("}");
+    out
+}
+
+fn p63_campaign_registry_summary_json(campaigns: &[P63CampaignRegistryEntry]) -> String {
+    let modes = unique_strings(campaigns.iter().map(|campaign| campaign.mode.as_str()));
+    let profiles = unique_strings(
+        campaigns
+            .iter()
+            .map(|campaign| campaign.threshold_profile.as_str()),
+    );
+    let decisions = unique_strings(campaigns.iter().map(|campaign| campaign.decision.as_str()));
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str(&json_string("registry_version", "p63_registry_v1", true, 2));
+    out.push_str(&json_string("astra_step", "P63", true, 2));
+    out.push_str(&json_usize("campaign_count", campaigns.len(), true, 2));
+    string_array_json(&mut out, "modes", &modes, true, 2);
+    string_array_json(&mut out, "threshold_profiles", &profiles, true, 2);
+    string_array_json(&mut out, "decisions", &decisions, true, 2);
+    out.push_str("  \"campaigns\": [\n");
+    for (idx, campaign) in campaigns.iter().enumerate() {
+        out.push_str("    {\n");
+        out.push_str(&json_string(
+            "campaign_name",
+            &campaign.campaign_name,
+            true,
+            6,
+        ));
+        out.push_str(&json_string("mode", &campaign.mode, true, 6));
+        out.push_str(&json_f64(
+            "median_ratio_effective_per_byte",
+            campaign.median_ratio_effective_per_byte,
+            true,
+            6,
+        ));
+        out.push_str(&json_f64(
+            "median_total_persisted_bytes",
+            campaign.median_total_persisted_bytes,
+            true,
+            6,
+        ));
+        out.push_str(&json_string(
+            "campaign_stability_status",
+            &campaign.campaign_stability_status,
+            true,
+            6,
+        ));
+        out.push_str(&json_string("decision", &campaign.decision, false, 6));
+        out.push_str(&format!("    }}{}\n", comma(idx, campaigns.len())));
+    }
+    out.push_str("  ],\n");
+    out.push_str("  \"warnings\": [\n");
+    out.push_str("    \"registry summaries are local analysis artifacts and are not scientific validation\",\n");
+    out.push_str("    \"artifacts/p63/ remains ignored by git\"\n");
+    out.push_str("  ],\n");
+    out.push_str(&json_string(
+        "recommendation",
+        "continue collecting comparable same-mode campaigns before calibration",
+        false,
+        2,
+    ));
+    out.push_str("}\n");
+    out
+}
+
+fn parse_registry_entries(registry_json: &str) -> Vec<P63CampaignRegistryEntry> {
+    let Some(campaigns_idx) = registry_json.find("\"campaigns\"") else {
+        return Vec::new();
+    };
+    let Some(open_idx_rel) = registry_json[campaigns_idx..].find('[') else {
+        return Vec::new();
+    };
+    let array_start = campaigns_idx + open_idx_rel + 1;
+    let mut entries = Vec::new();
+    let mut depth = 0usize;
+    let mut object_start = None;
+    for (offset, ch) in registry_json[array_start..].char_indices() {
+        let idx = array_start + offset;
+        match ch {
+            '{' => {
+                if depth == 0 {
+                    object_start = Some(idx);
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    if let Some(start) = object_start.take() {
+                        let object = &registry_json[start..=idx];
+                        if let Some(entry) = P63CampaignRegistryEntry::from_registry_json(object) {
+                            entries.push(entry);
+                        }
+                    }
+                }
+            }
+            ']' if depth == 0 => break,
+            _ => {}
+        }
+    }
+    entries
+}
+
+fn unique_strings<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
+    values
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -457,9 +807,9 @@ impl ParsedCampaign {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum P63CampaignCompatibilityStatus {
-    Comparable,
-    DifferentModes,
-    IncompatibleProfiles,
+    SameModeComparable,
+    DifferentModesInformational,
+    IncompatibleProfile,
     MissingFields,
     InvalidReport,
 }
@@ -467,9 +817,11 @@ enum P63CampaignCompatibilityStatus {
 impl P63CampaignCompatibilityStatus {
     fn as_str(self) -> &'static str {
         match self {
-            P63CampaignCompatibilityStatus::Comparable => "COMPARABLE",
-            P63CampaignCompatibilityStatus::DifferentModes => "DIFFERENT_MODES",
-            P63CampaignCompatibilityStatus::IncompatibleProfiles => "INCOMPATIBLE_PROFILES",
+            P63CampaignCompatibilityStatus::SameModeComparable => "SAME_MODE_COMPARABLE",
+            P63CampaignCompatibilityStatus::DifferentModesInformational => {
+                "DIFFERENT_MODES_INFORMATIONAL"
+            }
+            P63CampaignCompatibilityStatus::IncompatibleProfile => "INCOMPATIBLE_PROFILE",
             P63CampaignCompatibilityStatus::MissingFields => "MISSING_FIELDS",
             P63CampaignCompatibilityStatus::InvalidReport => "INVALID_REPORT",
         }
@@ -488,23 +840,23 @@ fn compatibility_status(a: &ParsedCampaign, b: &ParsedCampaign) -> P63CampaignCo
         return P63CampaignCompatibilityStatus::MissingFields;
     }
     if a.threshold_profile != b.threshold_profile {
-        return P63CampaignCompatibilityStatus::IncompatibleProfiles;
+        return P63CampaignCompatibilityStatus::IncompatibleProfile;
     }
     if a.mode != b.mode {
-        return P63CampaignCompatibilityStatus::DifferentModes;
+        return P63CampaignCompatibilityStatus::DifferentModesInformational;
     }
-    P63CampaignCompatibilityStatus::Comparable
+    P63CampaignCompatibilityStatus::SameModeComparable
 }
 
 fn comparison_interpretation(status: P63CampaignCompatibilityStatus) -> &'static str {
     match status {
-        P63CampaignCompatibilityStatus::Comparable => {
+        P63CampaignCompatibilityStatus::SameModeComparable => {
             "campaigns share mode and threshold profile; deltas are directly comparable"
         }
-        P63CampaignCompatibilityStatus::DifferentModes => {
+        P63CampaignCompatibilityStatus::DifferentModesInformational => {
             "campaigns use different modes; deltas are informational and not a regression claim"
         }
-        P63CampaignCompatibilityStatus::IncompatibleProfiles => {
+        P63CampaignCompatibilityStatus::IncompatibleProfile => {
             "campaigns use different threshold profiles; compare only after recalibration"
         }
         P63CampaignCompatibilityStatus::MissingFields => {
@@ -518,15 +870,39 @@ fn comparison_interpretation(status: P63CampaignCompatibilityStatus) -> &'static
 
 fn comparison_decision(status: P63CampaignCompatibilityStatus) -> &'static str {
     match status {
-        P63CampaignCompatibilityStatus::Comparable => "COMPARE_P63_CAMPAIGNS_INFORMATIONAL",
-        P63CampaignCompatibilityStatus::DifferentModes => {
+        P63CampaignCompatibilityStatus::SameModeComparable => "COMPARE_P63_SAME_MODE_INFORMATIONAL",
+        P63CampaignCompatibilityStatus::DifferentModesInformational => {
             "COMPARE_P63_DIFFERENT_MODES_INFORMATIONAL"
         }
-        P63CampaignCompatibilityStatus::IncompatibleProfiles => {
-            "RECALIBRATE_P63_COMPARISON_PROFILES"
-        }
+        P63CampaignCompatibilityStatus::IncompatibleProfile => "RECALIBRATE_P63_COMPARISON_PROFILE",
         P63CampaignCompatibilityStatus::MissingFields => "NO_GO_P63_COMPARISON_MISSING_FIELDS",
         P63CampaignCompatibilityStatus::InvalidReport => "NO_GO_P63_COMPARISON_INVALID_REPORT",
+    }
+}
+
+fn intra_mode_status(
+    compatibility_status: P63CampaignCompatibilityStatus,
+    ratio_shift_percent: f64,
+    bytes_shift_percent: f64,
+    same_decision: bool,
+) -> &'static str {
+    if compatibility_status != P63CampaignCompatibilityStatus::SameModeComparable {
+        return "INTRA_MODE_NOT_ENOUGH_DATA";
+    }
+    let profile = P63ThresholdProfile::P63.spec();
+    let ratio_shift = ratio_shift_percent.abs();
+    let bytes_shift = bytes_shift_percent.abs();
+    if ratio_shift <= profile.candidate_max_intra_mode_ratio_shift_percent
+        && bytes_shift <= profile.candidate_max_intra_mode_bytes_shift_percent
+        && same_decision
+    {
+        "INTRA_MODE_STABLE"
+    } else if ratio_shift <= profile.candidate_max_intra_mode_ratio_shift_percent * 2.0
+        && bytes_shift <= profile.candidate_max_intra_mode_bytes_shift_percent * 2.0
+    {
+        "INTRA_MODE_WARN"
+    } else {
+        "INTRA_MODE_UNSTABLE"
     }
 }
 
@@ -1081,6 +1457,36 @@ fn threshold_profile_config_json(out: &mut String, profile: &P63ThresholdProfile
     out.push_str(&json_bool(
         "allow_validate",
         profile.allow_validate,
+        true,
+        4,
+    ));
+    out.push_str(&json_usize(
+        "candidate_min_runs_for_future_validation",
+        profile.candidate_min_runs_for_future_validation,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "candidate_max_ratio_cv",
+        profile.candidate_max_ratio_cv,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "candidate_max_bytes_cv",
+        profile.candidate_max_bytes_cv,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "candidate_max_intra_mode_ratio_shift_percent",
+        profile.candidate_max_intra_mode_ratio_shift_percent,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "candidate_max_intra_mode_bytes_shift_percent",
+        profile.candidate_max_intra_mode_bytes_shift_percent,
         false,
         4,
     ));

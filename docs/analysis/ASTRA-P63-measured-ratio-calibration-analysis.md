@@ -14,11 +14,15 @@ This report was initialized before P63 calibration implementation. Prompt Codex
 2 adds the first compact campaign export surface, but it does not claim
 scientific ratio validation.
 
-Current P63 status: `PARTIAL_IMPLEMENTATION_CAMPAIGN_EXPORTS`.
+Current P63 status: `PARTIAL_IMPLEMENTATION_CAMPAIGN_REGISTRY`.
 
 Prompt Codex 3 adds versioned threshold profiles, explicit campaign stability
 status, enriched compact run exports, and campaign comparison. It still keeps
 the scientific decision conservative.
+
+Prompt Codex 4 adds a compact local campaign registry, same-mode comparison
+status, non-validating candidate thresholds and registry summary output. It
+does not add external datasets and does not enable scientific validation.
 
 ## 2. Position in ASTRA
 
@@ -52,6 +56,7 @@ Expected future additions:
 - P62 current scientific decision: `RECALIBRATE_P62_MEASUREMENT_MODEL`.
 - P63 campaign export code: `PARTIAL_IMPLEMENTATION_CAMPAIGN_EXPORTS`.
 - P63 threshold profile: `p63`, conservative.
+- P63 campaign registry: `PARTIAL_IMPLEMENTATION_CAMPAIGN_REGISTRY`.
 - CI status for this P63 report step: `TODO_AFTER_CI`.
 
 ## 5. Files changed
@@ -86,6 +91,18 @@ Prompt Codex 3 calibration layer step:
 Runtime semantics, grammar, invalid examples and timing goldens are not expected
 to change in this P63 calibration layer step.
 
+Prompt Codex 4 campaign registry step:
+
+- `src/p63.rs`
+- `src/cli.rs`
+- `tests/p63_tests.rs`
+- `docs/validation/astra-p63-measured-ratio-calibration.md`
+- `docs/analysis/ASTRA-P63-measured-ratio-calibration-analysis.md`
+- `README.md`
+
+Runtime semantics, grammar, invalid examples, P61/P62 goldens and timing
+goldens are not changed in this campaign registry step.
+
 ## 6. Commands executed
 
 Executed locally for this P63 documentation/reporting step:
@@ -105,12 +122,19 @@ cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard -
 cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json --runs 5 --export-dir artifacts/p63/smoke --threshold-profile p63
 cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard --format json --runs 10 --export-dir artifacts/p63/standard --threshold-profile p63
 cargo run -p atlas-cli -- ratio-campaign-compare artifacts/p63/smoke/campaign_report.json artifacts/p63/standard/campaign_report.json --format json
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard --format json --runs 10 --export-dir artifacts/p63/standard_001 --threshold-profile p63
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard --format json --runs 10 --export-dir artifacts/p63/standard_002 --threshold-profile p63
+cargo run -p atlas-cli -- ratio-campaign-compare artifacts/p63/standard_001/campaign_report.json artifacts/p63/standard_002/campaign_report.json --format json
+cargo run -p atlas-cli -- ratio-campaign-compare artifacts/p63/smoke/campaign_report.json artifacts/p63/standard_001/campaign_report.json --format json
+cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/standard_001/campaign_report.json --registry artifacts/p63/registry.json --name standard_local_001 --format json
+cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/standard_002/campaign_report.json --registry artifacts/p63/registry.json --name standard_local_002 --format json
+cargo run -p atlas-cli -- ratio-campaign-summary artifacts/p63/registry.json --format json
 
 git status --short
 git diff --check
 ```
 
-Execution status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_3`.
+Execution status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_4`.
 
 ## 7. Validation results
 
@@ -164,13 +188,46 @@ Execution status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_3`.
   - ratio/bytes stability: `STABLE`
   - timing stability: `WARN`
 - P63 campaign comparison command: `PASS`
-  - `compatibility_status = DIFFERENT_MODES`
+  - `compatibility_status = DIFFERENT_MODES_INFORMATIONAL`
   - `comparison_decision = COMPARE_P63_DIFFERENT_MODES_INFORMATIONAL`
   - `ratio_shift_percent = 94.816789`
   - `bytes_shift_percent = 1069.189684`
+- P63 standard campaign 001: `PASS`
+  - command: `ratio-real ... --mode standard --runs 10 --export-dir artifacts/p63/standard_001 --threshold-profile p63`
+  - median `ratio_effective_per_byte = 6.421551`
+  - median `total_persisted_bytes = 383085`
+  - `campaign_stability_status = WARN`
+  - decision: `RECALIBRATE_P63_THRESHOLDS`
+- P63 standard campaign 002: `PASS`
+  - command: `ratio-real ... --mode standard --runs 10 --export-dir artifacts/p63/standard_002 --threshold-profile p63`
+  - median `ratio_effective_per_byte = 6.421551`
+  - median `total_persisted_bytes = 383085`
+  - `campaign_stability_status = WARN`
+  - decision: `RECALIBRATE_P63_THRESHOLDS`
+- P63 standard intra-mode comparison: `PASS`
+  - `compatibility_status = SAME_MODE_COMPARABLE`
+  - `intra_mode_status = INTRA_MODE_STABLE`
+  - `ratio_shift_percent = 0.000000`
+  - `bytes_shift_percent = 0.000000`
+  - `decision_compatibility = SAME_DECISION`
+  - `comparison_decision = COMPARE_P63_SAME_MODE_INFORMATIONAL`
+- P63 smoke vs standard inter-mode comparison: `PASS`
+  - `compatibility_status = DIFFERENT_MODES_INFORMATIONAL`
+  - `intra_mode_status = INTRA_MODE_NOT_ENOUGH_DATA`
+  - `ratio_shift_percent = 94.816789`
+  - `bytes_shift_percent = 1069.189684`
+  - `comparison_decision = COMPARE_P63_DIFFERENT_MODES_INFORMATIONAL`
+- P63 campaign registry: `PASS`
+  - `registry_version = p63_registry_v1`
+  - `astra_step = P63`
+  - campaigns registered: `standard_local_001`, `standard_local_002`
+- P63 campaign registry summary: `PASS`
+  - `campaign_count = 2`
+  - modes: `standard`
+  - decision: `RECALIBRATE_P63_THRESHOLDS`
 - `git diff --check`: `PASS`
-- GitHub Actions before Prompt Codex 3: `PASS_USER_REPORTED`
-- GitHub Actions after Prompt Codex 3: `TODO_AFTER_CI`
+- GitHub Actions before Prompt Codex 4: `PASS_USER_REPORTED`
+- GitHub Actions after Prompt Codex 4: `TODO_AFTER_CI`
 
 The results validate the repository/documentation step, inherited P61/P62
 commands and the first compact P63 campaign export surface. They are not a
@@ -188,7 +245,12 @@ P62 replaces proxy cost with measured `ratio_effective_per_byte` and real timing
 fields, but remains conservative because workloads are deterministic internal
 workloads and thresholds are not calibrated.
 
-P63 comparison table: `PENDING_P63_IMPLEMENTATION`.
+P63 local comparison table:
+
+| Comparison | compatibility_status | intra_mode_status | ratio_shift_percent | bytes_shift_percent | decision |
+| --- | --- | --- | ---: | ---: | --- |
+| `standard_001` vs `standard_002` | `SAME_MODE_COMPARABLE` | `INTRA_MODE_STABLE` | `0.000000` | `0.000000` | `COMPARE_P63_SAME_MODE_INFORMATIONAL` |
+| `smoke` vs `standard_001` | `DIFFERENT_MODES_INFORMATIONAL` | `INTRA_MODE_NOT_ENOUGH_DATA` | `94.816789` | `1069.189684` | `COMPARE_P63_DIFFERENT_MODES_INFORMATIONAL` |
 
 ## 9. Campaign results
 
@@ -212,6 +274,20 @@ Prompt Codex 3 adds compact enriched run exports with:
 - `operation_count`;
 - `decision`;
 - `timestamp_utc`.
+
+Prompt Codex 4 adds a compact campaign registry:
+
+- `registry_version = p63_registry_v1`;
+- `astra_step = P63`;
+- campaign id and name;
+- mode and threshold profile;
+- report path;
+- repeat count;
+- median ratio and byte totals;
+- campaign stability;
+- decision;
+- compact machine metadata;
+- git commit when available.
 
 Expected future campaign fields:
 
@@ -237,7 +313,7 @@ Implemented first-pass statistics:
 - standard deviation;
 - coefficient of variation.
 
-Status: `PARTIAL_IMPLEMENTATION_CAMPAIGN_EXPORTS`.
+Status: `PARTIAL_IMPLEMENTATION_CAMPAIGN_REGISTRY`.
 
 Prompt Codex 3 adds explicit stability statuses:
 
@@ -248,6 +324,10 @@ Prompt Codex 3 adds explicit stability statuses:
 - `stability_reasons`.
 
 The first versioned profile is `p63_conservative_v1`.
+
+Prompt Codex 4 adds same-mode stability interpretation and candidate
+non-validating thresholds. These thresholds guide future analysis only; they do
+not enable validation.
 
 ## 11. Threshold profile and decisions
 
@@ -277,8 +357,13 @@ Prompt Codex 3 profile:
 - `require_campaign_exports = true`
 - `require_realish_workloads = false`
 - `allow_validate = false`
+- `candidate_min_runs_for_future_validation = 30`
+- `candidate_max_ratio_cv = 0.03`
+- `candidate_max_bytes_cv = 0.03`
+- `candidate_max_intra_mode_ratio_shift_percent = 5.0`
+- `candidate_max_intra_mode_bytes_shift_percent = 5.0`
 
-Expected Prompt Codex 3 decision remains:
+Expected Prompt Codex 4 decision remains:
 
 ```text
 RECALIBRATE_P63_THRESHOLDS
@@ -316,8 +401,11 @@ Proposed gates:
 - `P63_G7_no_timing_golden`
 - `P63_G8_no_atlas_grammar_change`
 - `P63_G9_strict_p53_preserved`
+- `P63_G10_campaign_registry_available`
+- `P63_G11_same_mode_comparison_available`
+- `P63_G12_candidate_thresholds_non_validating`
 
-Gate status: `PENDING_P63_IMPLEMENTATION`.
+Gate status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_4_RECALIBRATE`.
 
 Prompt Codex 2 observed gate status:
 
@@ -331,6 +419,9 @@ Prompt Codex 2 observed gate status:
 - `P63_G7_no_timing_golden`: `PASS`
 - `P63_G8_no_atlas_grammar_change`: `PASS`
 - `P63_G9_strict_p53_preserved`: `PASS`
+- `P63_G10_campaign_registry_available`: `PASS`
+- `P63_G11_same_mode_comparison_available`: `PASS`
+- `P63_G12_candidate_thresholds_non_validating`: `PASS`
 
 Final scientific gate status remains `RECALIBRATE_P63_THRESHOLDS`.
 
@@ -346,7 +437,24 @@ cargo run -p atlas-cli -- ratio-campaign-compare \
 ```
 
 Smoke and standard are different modes. A comparison between them should report
-`DIFFERENT_MODES` while still emitting informative ratio and byte deltas.
+`DIFFERENT_MODES_INFORMATIONAL` while still emitting informative ratio and byte
+deltas.
+
+Prompt Codex 4 adds:
+
+- same mode and same threshold profile status: `SAME_MODE_COMPARABLE`;
+- different mode status: `DIFFERENT_MODES_INFORMATIONAL`;
+- same-mode status: `INTRA_MODE_STABLE`, `INTRA_MODE_WARN`,
+  `INTRA_MODE_UNSTABLE`, or `INTRA_MODE_NOT_ENOUGH_DATA`;
+- registry commands for compact campaign tracking:
+  `ratio-campaign-register` and `ratio-campaign-summary`.
+
+Observed Prompt Codex 4 local comparison:
+
+- `standard_001` vs `standard_002`: `SAME_MODE_COMPARABLE`,
+  `INTRA_MODE_STABLE`;
+- `smoke` vs `standard_001`: `DIFFERENT_MODES_INFORMATIONAL`,
+  `INTRA_MODE_NOT_ENOUGH_DATA`.
 
 ## 14. Scientific interpretation
 
@@ -399,4 +507,7 @@ essential.
 - Prompt Codex 2 local validation: `LOCAL_VALIDATION_PASS_FOR_PROMPT_2`.
 - Prompt Codex 3 calibration layer implementation:
   `LOCAL_VALIDATION_PASS_FOR_PROMPT_3`.
-- CI validation: `TODO_AFTER_CI`.
+- Prompt Codex 3 CI validation: `PASS_USER_REPORTED`.
+- Prompt Codex 4 campaign registry implementation:
+  `LOCAL_VALIDATION_PASS_FOR_PROMPT_4`.
+- Prompt Codex 4 CI validation: `TODO_AFTER_CI`.

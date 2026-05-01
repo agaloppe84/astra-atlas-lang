@@ -1,6 +1,7 @@
 use astra_atlas_lang::{
-    p63_campaign_compare_json_files, p63_campaign_report_file_with_runs,
-    write_p63_campaign_exports, P63Decision, P63StabilityStatus, P63ThresholdProfile, WorkloadMode,
+    p63_campaign_compare_json_files, p63_campaign_register_json_file,
+    p63_campaign_report_file_with_runs, p63_campaign_summary_json_file, write_p63_campaign_exports,
+    P63Decision, P63StabilityStatus, P63ThresholdProfile, WorkloadMode,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -49,6 +50,11 @@ fn p63_threshold_profile_alias_resolves_to_conservative_v1() {
     assert!(spec.require_machine_metadata);
     assert!(spec.require_campaign_exports);
     assert!(!spec.require_realish_workloads);
+    assert_eq!(spec.candidate_min_runs_for_future_validation, 30);
+    assert_eq!(spec.candidate_max_ratio_cv, 0.03);
+    assert_eq!(spec.candidate_max_bytes_cv, 0.03);
+    assert_eq!(spec.candidate_max_intra_mode_ratio_shift_percent, 5.0);
+    assert_eq!(spec.candidate_max_intra_mode_bytes_shift_percent, 5.0);
 }
 
 #[test]
@@ -210,9 +216,165 @@ fn p63_campaign_comparison_reports_deltas_and_status() {
 
     assert!(comparison.contains("\"ratio_shift\":"));
     assert!(comparison.contains("\"bytes_shift\":"));
-    assert!(comparison.contains("\"compatibility_status\": \"DIFFERENT_MODES\""));
+    assert!(comparison.contains("\"compatibility_status\": \"DIFFERENT_MODES_INFORMATIONAL\""));
+    assert!(comparison.contains("\"intra_mode_status\": \"INTRA_MODE_NOT_ENOUGH_DATA\""));
     assert!(comparison.contains("\"comparison_decision\":"));
     assert!(comparison.contains("\"threshold_profile_a\": \"p63_conservative_v1\""));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn p63_campaign_comparison_marks_same_mode_comparable() {
+    let root = unique_export_dir();
+    let standard_a_dir = root.join("standard_a");
+    let standard_b_dir = root.join("standard_b");
+    let standard_a = p63_campaign_report_file_with_runs(
+        "examples/p53_strict.atlas",
+        WorkloadMode::Standard,
+        2,
+        P63ThresholdProfile::P63,
+    )
+    .expect("standard A report");
+    let standard_b = p63_campaign_report_file_with_runs(
+        "examples/p53_strict.atlas",
+        WorkloadMode::Standard,
+        2,
+        P63ThresholdProfile::P63,
+    )
+    .expect("standard B report");
+    write_p63_campaign_exports(&standard_a, &standard_a_dir).expect("write standard A exports");
+    write_p63_campaign_exports(&standard_b, &standard_b_dir).expect("write standard B exports");
+
+    let comparison = p63_campaign_compare_json_files(
+        standard_a_dir
+            .join("campaign_report.json")
+            .to_str()
+            .expect("standard A path"),
+        standard_b_dir
+            .join("campaign_report.json")
+            .to_str()
+            .expect("standard B path"),
+    )
+    .expect("comparison json");
+
+    assert!(comparison.contains("\"compatibility_status\": \"SAME_MODE_COMPARABLE\""));
+    assert!(comparison.contains("\"intra_mode_status\": \"INTRA_MODE_STABLE\""));
+    assert!(comparison.contains("\"decision_compatibility\": \"SAME_DECISION\""));
+    assert!(comparison.contains("\"comparison_decision\": \"COMPARE_P63_SAME_MODE_INFORMATIONAL\""));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn p63_campaign_registry_adds_campaigns_and_summarizes() {
+    let root = unique_export_dir();
+    let standard_a_dir = root.join("standard_a");
+    let standard_b_dir = root.join("standard_b");
+    let registry_path = root.join("registry.json");
+    let standard_a = p63_campaign_report_file_with_runs(
+        "examples/p53_strict.atlas",
+        WorkloadMode::Standard,
+        2,
+        P63ThresholdProfile::P63,
+    )
+    .expect("standard A report");
+    let standard_b = p63_campaign_report_file_with_runs(
+        "examples/p53_strict.atlas",
+        WorkloadMode::Standard,
+        2,
+        P63ThresholdProfile::P63,
+    )
+    .expect("standard B report");
+    write_p63_campaign_exports(&standard_a, &standard_a_dir).expect("write standard A exports");
+    write_p63_campaign_exports(&standard_b, &standard_b_dir).expect("write standard B exports");
+
+    let registry_one = p63_campaign_register_json_file(
+        standard_a_dir
+            .join("campaign_report.json")
+            .to_str()
+            .expect("standard A path"),
+        registry_path.to_str().expect("registry path"),
+        "standard_local_001",
+    )
+    .expect("register first campaign");
+    assert!(registry_one.contains("\"registry_version\": \"p63_registry_v1\""));
+    assert!(registry_one.contains("\"astra_step\": \"P63\""));
+    assert!(registry_one.contains("\"campaign_name\": \"standard_local_001\""));
+
+    let registry_two = p63_campaign_register_json_file(
+        standard_b_dir
+            .join("campaign_report.json")
+            .to_str()
+            .expect("standard B path"),
+        registry_path.to_str().expect("registry path"),
+        "standard_local_002",
+    )
+    .expect("register second campaign");
+    assert!(registry_two.contains("\"campaign_name\": \"standard_local_001\""));
+    assert!(registry_two.contains("\"campaign_name\": \"standard_local_002\""));
+
+    let summary = p63_campaign_summary_json_file(registry_path.to_str().expect("registry path"))
+        .expect("registry summary");
+    assert!(summary.contains("\"registry_version\": \"p63_registry_v1\""));
+    assert!(summary.contains("\"campaign_count\": 2"));
+    assert!(summary.contains("\"modes\": ["));
+    assert!(summary.contains("\"standard\""));
+    assert!(summary.contains("\"recommendation\":"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn p63_campaign_registry_cli_commands_work() {
+    let root = unique_export_dir();
+    let export_dir = root.join("standard");
+    let registry_path = root.join("registry.json");
+    let report = p63_campaign_report_file_with_runs(
+        "examples/p53_strict.atlas",
+        WorkloadMode::Standard,
+        2,
+        P63ThresholdProfile::P63,
+    )
+    .expect("standard report");
+    write_p63_campaign_exports(&report, &export_dir).expect("write standard exports");
+
+    let register = Command::new(env!("CARGO_BIN_EXE_atlas-cli"))
+        .args([
+            "ratio-campaign-register",
+            export_dir
+                .join("campaign_report.json")
+                .to_str()
+                .expect("campaign path"),
+            "--registry",
+            registry_path.to_str().expect("registry path"),
+            "--name",
+            "standard_local_001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run ratio-campaign-register");
+
+    assert!(register.status.success());
+    let register_stdout = String::from_utf8_lossy(&register.stdout);
+    assert!(register_stdout.contains("\"registry_version\": \"p63_registry_v1\""));
+    assert!(registry_path.exists());
+
+    let summary = Command::new(env!("CARGO_BIN_EXE_atlas-cli"))
+        .args([
+            "ratio-campaign-summary",
+            registry_path.to_str().expect("registry path"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run ratio-campaign-summary");
+
+    assert!(summary.status.success());
+    let summary_stdout = String::from_utf8_lossy(&summary.stdout);
+    assert!(summary_stdout.contains("\"campaign_count\": 1"));
+    assert!(summary_stdout.contains("\"standard\""));
 
     let _ = fs::remove_dir_all(root);
 }
