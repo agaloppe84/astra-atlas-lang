@@ -14,7 +14,7 @@ use crate::{
     P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, P71FiberStoreOptions,
     P72CompactionPolicy, P72LivingStoreOptions, P73CompareP72, P73CubicalStoreOptions,
     P74CompactionPolicy, P74LocalityProfile, P74TopologyLivingOptions, P74UpdatePressure,
-    RealDataCorpusKind, TopologyKind, WorkloadMode,
+    RealDataCorpusKind, RouterLivingOptions, RouterPolicy, TopologyKind, WorkloadMode,
 };
 use std::env;
 
@@ -74,12 +74,28 @@ fn run(args: &[String]) -> Result<(), String> {
         "living-store-bench" => living_store_bench_command(args),
         "cubical-store-bench" => cubical_store_bench_command(args),
         "topology-living-bench" => topology_living_bench_command(args),
+        "mixed-topology-bench" => mixed_topology_bench_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
 }
 
 fn check_path(path: &str) -> Result<(), String> {
+    if crate::p75_router_file_looks_like(path) {
+        return match crate::p75_router_contract_report_file(path) {
+            Ok(report) => {
+                println!(
+                    "OK: p75_router={} default={} living={} guard={}",
+                    report.router_id,
+                    report.default_topology,
+                    report.living_memory_only,
+                    report.guard_no_false_gain
+                );
+                Ok(())
+            }
+            Err(diagnostic) => Err(diagnostic.to_string()),
+        };
+    }
     if crate::p74_topology_file_looks_like(path) {
         return match crate::p74_topology_contract_report_file(path) {
             Ok(report) => {
@@ -575,6 +591,17 @@ fn topology_living_bench_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn mixed_topology_bench_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p75_router_living_options(&args[1..])?;
+    let report = crate::p75_mixed_topology_bench(options.options, &options.export_dir)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p75_mixed_topology_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p75_mixed_topology_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -683,6 +710,13 @@ struct P73CubicalStoreCliOptions {
 #[derive(Debug, Clone, PartialEq)]
 struct P74TopologyLivingCliOptions {
     options: P74TopologyLivingOptions,
+    export_dir: String,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P75RouterLivingCliOptions {
+    options: RouterLivingOptions,
     export_dir: String,
     format: OutputFormat,
 }
@@ -2947,6 +2981,241 @@ fn parse_p74_update_pressure(value: &str) -> Result<P74UpdatePressure, String> {
     })
 }
 
+fn parse_p75_router_living_options(args: &[String]) -> Result<P75RouterLivingCliOptions, String> {
+    let mut corpora = None;
+    let mut router = None;
+    let mut target_source_bytes = None;
+    let mut cycles = None;
+    let mut queries = None;
+    let mut updates = None;
+    let mut deletes = None;
+    let mut compact = None;
+    let mut adaptive = None;
+    let mut locality = None;
+    let mut update_pressure = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--corpus" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --corpus"))?;
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corpus=") {
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 1;
+        } else if arg == "--router" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --router"))?;
+            router = Some(parse_p75_router_policy(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--router=") {
+            router = Some(parse_p75_router_policy(value)?);
+            idx += 1;
+        } else if arg == "--target-source-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("mixed-topology-bench requires a value after --target-source-bytes")
+            })?;
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "mixed-topology-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--target-source-bytes=") {
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "mixed-topology-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--cycles" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --cycles"))?;
+            cycles = Some(parse_positive_usize(
+                value,
+                "mixed-topology-bench",
+                "--cycles",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cycles=") {
+            cycles = Some(parse_positive_usize(
+                value,
+                "mixed-topology-bench",
+                "--cycles",
+            )?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(
+                value,
+                "mixed-topology-bench",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "mixed-topology-bench",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--updates" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --updates"))?;
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "mixed-topology-bench",
+                "--updates",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--updates=") {
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "mixed-topology-bench",
+                "--updates",
+            )?);
+            idx += 1;
+        } else if arg == "--deletes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --deletes"))?;
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "mixed-topology-bench",
+                "--deletes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--deletes=") {
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "mixed-topology-bench",
+                "--deletes",
+            )?);
+            idx += 1;
+        } else if arg == "--compact" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --compact"))?;
+            compact = Some(parse_p74_compact_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--compact=") {
+            compact = Some(parse_p74_compact_value(value)?);
+            idx += 1;
+        } else if arg == "--adaptive" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --adaptive"))?;
+            adaptive = Some(parse_bool_value(
+                value,
+                "mixed-topology-bench",
+                "--adaptive",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--adaptive=") {
+            adaptive = Some(parse_bool_value(
+                value,
+                "mixed-topology-bench",
+                "--adaptive",
+            )?);
+            idx += 1;
+        } else if arg == "--locality" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --locality"))?;
+            locality = Some(parse_p74_locality(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--locality=") {
+            locality = Some(parse_p74_locality(value)?);
+            idx += 1;
+        } else if arg == "--update-pressure" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("mixed-topology-bench requires a value after --update-pressure")
+            })?;
+            update_pressure = Some(parse_p74_update_pressure(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--update-pressure=") {
+            update_pressure = Some(parse_p74_update_pressure(value)?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("mixed-topology-bench requires a value after --format"))?;
+            format = Some(parse_format_value(value, "mixed-topology-bench")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "mixed-topology-bench")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "mixed-topology-bench received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P75RouterLivingCliOptions {
+        options: RouterLivingOptions {
+            corpora: corpora.ok_or_else(|| {
+                usage("mixed-topology-bench requires --corpus all|code|logs|json|csv|guard")
+            })?,
+            router: router.ok_or_else(|| {
+                usage(
+                    "mixed-topology-bench requires --router mixed|hierarchical-only|linear-only|cubical-only|trie-only|graph-only|hypergraph-only",
+                )
+            })?,
+            target_source_bytes: target_source_bytes
+                .ok_or_else(|| usage("mixed-topology-bench requires --target-source-bytes N"))?,
+            cycles: cycles.ok_or_else(|| usage("mixed-topology-bench requires --cycles N"))?,
+            queries: queries.ok_or_else(|| usage("mixed-topology-bench requires --queries N"))?,
+            updates: updates.ok_or_else(|| usage("mixed-topology-bench requires --updates N"))?,
+            deletes: deletes.ok_or_else(|| usage("mixed-topology-bench requires --deletes N"))?,
+            compact: compact.ok_or_else(|| {
+                usage("mixed-topology-bench requires --compact off|threshold|aggressive|adaptive")
+            })?,
+            adaptive: adaptive
+                .ok_or_else(|| usage("mixed-topology-bench requires --adaptive on|off"))?,
+            locality: locality.ok_or_else(|| {
+                usage("mixed-topology-bench requires --locality clustered|random|mixed|hotspot")
+            })?,
+            update_pressure: update_pressure.ok_or_else(|| {
+                usage("mixed-topology-bench requires --update-pressure low|medium|high")
+            })?,
+        },
+        export_dir: export_dir
+            .ok_or_else(|| usage("mixed-topology-bench requires --export-dir <path>"))?,
+        format: format
+            .ok_or_else(|| usage("mixed-topology-bench requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p75_router_policy(value: &str) -> Result<RouterPolicy, String> {
+    RouterPolicy::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "mixed-topology-bench received unsupported router '{}'; expected mixed|hierarchical-only|linear-only|cubical-only|trie-only|graph-only|hypergraph-only",
+            value
+        ))
+    })
+}
+
 fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
     match value {
         "true" | "on" | "yes" => Ok(true),
@@ -3295,6 +3564,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli living-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --runs N --queries N --updates N --deletes N --compact off|threshold|aggressive --adaptive on|off [--reopen-check on|off] --export-dir <path> --format json|markdown",
         "  atlas-cli cubical-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --cycles N --queries N --updates N --deletes N --corruptions N --compact off|threshold|aggressive --adaptive on|off --compare-p72 baseline|off --export-dir <path> --format json|markdown",
         "  atlas-cli topology-living-bench --corpus all|code|logs|json|csv|guard --topology all|linear|cubical|trie|graph|hypergraph|hierarchical --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --locality clustered|random|mixed|hotspot --update-pressure low|medium|high --export-dir <path> --format json|markdown",
+        "  atlas-cli mixed-topology-bench --corpus all|code|logs|json|csv|guard --router mixed|hierarchical-only|linear-only|cubical-only|trie-only|graph-only|hypergraph-only --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --locality clustered|random|mixed|hotspot --update-pressure low|medium|high --export-dir <path> --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

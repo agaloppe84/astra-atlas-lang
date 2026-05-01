@@ -1,0 +1,5 @@
+atlas version=0.1;
+p75_router_probe router=mixed;
+topology_router id=mixed_router default=hierarchical_tile guard_policy=refuse_or_raw_no_gain fallback=bounded hidden_router_storage=false;
+route corpus=code path_heavy=trie_prefix default=hierarchical_tile;
+router_gates living_memory_only=true reopen_equivalence=true guard_no_false_gain=true hidden_router_storage=false ratio_living_reported=true;

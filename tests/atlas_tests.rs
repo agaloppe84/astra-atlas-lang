@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 60] {
+fn invalid_cases() -> [InvalidCase; 68] {
     [
         InvalidCase {
             name: "bad_version",
@@ -492,6 +492,70 @@ fn invalid_cases() -> [InvalidCase; 60] {
             family: None,
             field: None,
             message: "unknown block 'fiber_topology'",
+        },
+        InvalidCase {
+            name: "p75_unknown_router_topology",
+            text: include_str!("../examples/invalid/p75_unknown_router_topology.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p75_router_probe'",
+        },
+        InvalidCase {
+            name: "p75_missing_guard_policy",
+            text: include_str!("../examples/invalid/p75_missing_guard_policy.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p75_router_probe'",
+        },
+        InvalidCase {
+            name: "p75_hidden_router_storage",
+            text: include_str!("../examples/invalid/p75_hidden_router_storage.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p75_router_probe'",
+        },
+        InvalidCase {
+            name: "p75_non_living_decision_gate",
+            text: include_str!("../examples/invalid/p75_non_living_decision_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p75_router_probe'",
+        },
+        InvalidCase {
+            name: "p75_missing_target_source_bytes",
+            text: include_str!("../examples/invalid/p75_missing_target_source_bytes.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p75_router_probe'",
+        },
+        InvalidCase {
+            name: "p75_unbounded_router_fallback",
+            text: include_str!("../examples/invalid/p75_unbounded_router_fallback.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p75_router_probe'",
+        },
+        InvalidCase {
+            name: "p75_bad_route_condition",
+            text: include_str!("../examples/invalid/p75_bad_route_condition.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p75_router_probe'",
+        },
+        InvalidCase {
+            name: "p75_missing_reopen_equivalence_gate",
+            text: include_str!("../examples/invalid/p75_missing_reopen_equivalence_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p75_router_probe'",
         },
     ]
 }

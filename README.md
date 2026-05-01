@@ -430,6 +430,43 @@ Resultat local P74: `target_source_bytes=10485760`,
 mais les meilleurs choix restent dependants du corpus. Decision:
 `RECALIBRATE_P74_FIBER_TOPOLOGY_SEARCH`.
 
+## Validation P75 mixed topology fiber router
+
+P75 ajoute `mixed-topology-bench` pour tester un routeur living-memory qui
+choisit une topologie locale par famille de fibre: trie pour chemins/prefixes,
+graph pour relations code, hypergraph pour tags, hierarchical tile pour sparse
+retrieval et linear pour updates simples.
+
+```bash
+cargo run -p atlas-cli -- mixed-topology-bench \
+  --corpus all \
+  --router mixed \
+  --target-source-bytes 10485760 \
+  --cycles 10 \
+  --queries 10000 \
+  --updates 1000 \
+  --deletes 100 \
+  --compact threshold \
+  --adaptive on \
+  --locality mixed \
+  --update-pressure medium \
+  --export-dir artifacts/p75/mixed_topology_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p75/` et sont ignores par Git. Voir
+[docs/validation/astra-p75-mixed-topology-fiber-router.md](docs/validation/astra-p75-mixed-topology-fiber-router.md),
+l'audit de tests
+[docs/analysis/ASTRA-P75-test-stack-audit.md](docs/analysis/ASTRA-P75-test-stack-audit.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P75-mixed-topology-fiber-router-analysis.md](docs/analysis/ASTRA-P75-mixed-topology-fiber-router-analysis.md).
+
+Resultat local P75: `ratio_living_router=4.759326` standard,
+`ratio_living_hierarchical_only=4.831165`,
+`router_vs_hierarchical_ratio=0.985130`, update cost routeur `31250` vs
+hierarchical `42290`, guard refuse et drift `NO_DRIFT`. Decision:
+`RECALIBRATE_P75_ROUTER_POLICY`.
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

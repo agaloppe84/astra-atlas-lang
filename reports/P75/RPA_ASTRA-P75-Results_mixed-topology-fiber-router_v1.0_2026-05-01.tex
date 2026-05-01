@@ -1,0 +1,235 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P75 Results -- Mixed-Topology Fiber Router},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.62em}
+\renewcommand{\arraystretch}{1.12}
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\TinyCode}[1]{{\scriptsize\texttt{\detokenize{#1}}}}
+\newcommand{\Decision}[1]{\textbf{\TinyCode{#1}}}
+
+\title{\textbf{ASTRA-P75 Results}\\Mixed-Topology Fiber Router}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+P75 teste un routeur deterministe de topologies de fibres en mode
+living-memory avec 10,485,760 bytes de donnees sources locales. Le routeur
+reste proche de \Code{hierarchical\_only} en \Code{ratio\_living}, reduit les
+couts update/audit, conserve retrieval et reopen, et refuse le guard. La
+decision reste \Decision{RECALIBRATE_P75_ROUTER_POLICY}.
+\end{abstract}
+
+\section{Objectif}
+
+P75 teste si le meilleur ratio living vient d'une topologie unique ou d'un
+routeur local. Le routeur choisit la forme de fibre adaptee a la structure
+observee: trie, graph, hypergraph, hierarchical tile, linear ou cubical.
+
+\section{Regles de process}
+
+La decision P75 est basee sur un protocole living-memory: encode, open,
+read/query, update, delete, audit, compact, close, reopen, guard et cout
+filesystem mesure. Les tests unitaires restent des non-regressions. Le PDF est
+compile localement par \Code{scripts/build_report.sh} avec Tectonic.
+
+\section{Modele du routeur}
+
+\begin{longtable}{@{}p{0.36\linewidth}p{0.54\linewidth}@{}}
+\toprule
+Famille & Route principale \\
+\midrule
+code path-heavy & \Code{trie\_prefix\_fiber} \\
+code relations & \Code{graph\_adjacency\_fiber} \\
+logs tags/severity & \Code{hypergraph\_tag\_fiber} \\
+JSON paths & \Code{trie\_prefix\_fiber} \\
+CSV sparse tiles & \Code{hierarchical\_tile\_fiber} \\
+CSV update-heavy & \Code{baseline\_linear\_fiber} \\
+guard & refused/no-go \\
+\bottomrule
+\end{longtable}
+
+\section{Syntaxe .atlas}
+
+La syntaxe retenue reste declarative et specialisee:
+
+\begin{verbatim}
+topology_router id=mixed_router default=hierarchical_tile
+  guard_policy=refuse_or_raw_no_gain fallback=bounded
+  hidden_router_storage=false;
+route corpus=code path_heavy=trie_prefix
+  relation_heavy=graph_adjacency default=hierarchical_tile;
+router_gates living_memory_only=true target_source_bytes=10485760
+  reopen_equivalence=true guard_no_false_gain=true
+  hidden_router_storage=false ratio_living_reported=true;
+\end{verbatim}
+
+\section{Validation locale}
+
+\begin{itemize}
+  \item \Code{cargo fmt --all -- --check}: PASS;
+  \item \Code{cargo build --workspace}: PASS;
+  \item \Code{cargo test --workspace}: PASS;
+  \item \Code{cargo test --test p75_tests}: 13 passed;
+  \item \Code{cargo test --test p74_tests}: PASS;
+  \item \Code{bash scripts/validate_p58_local.sh}: PASS;
+  \item invalides P75 dedies: 8/8 refuses;
+  \item \Code{git diff --check}: PASS.
+\end{itemize}
+
+\section{Campagne standard}
+
+\begin{longtable}{@{}p{0.49\linewidth}p{0.38\linewidth}@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\Code{target\_source\_bytes} & 10,485,760 \\
+\Code{actual\_source\_bytes} & 10,485,760 \\
+\Code{ratio\_living router} & 4.759326 \\
+\Code{ratio hierarchical} & 4.831165 \\
+\Code{router / hierarchical} & 0.985130 \\
+\Code{update cost router} & 31,250 \\
+\Code{update cost hierarchical} & 42,290 \\
+\Code{audit cost router} & 805 \\
+\Code{audit cost hierarchical} & 845 \\
+\Code{retrieval success} & 1.000000 \\
+\Code{reopen equivalence} & true \\
+\Code{drift status} & \Code{NO\_DRIFT} \\
+\Code{guard decision} & \TinyCode{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED} \\
+\bottomrule
+\end{longtable}
+
+Temps observe: \Code{real 0.41s}.
+
+\section{Campagne ambitious}
+
+\begin{longtable}{@{}p{0.49\linewidth}p{0.38\linewidth}@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\Code{target\_source\_bytes} & 10,485,760 \\
+\Code{actual\_source\_bytes} & 10,485,760 \\
+\Code{ratio\_living router} & 4.743249 \\
+\Code{ratio hierarchical} & 4.843523 \\
+\Code{router / hierarchical} & 0.979297 \\
+\Code{update cost router} & 183,099 \\
+\Code{update cost hierarchical} & 248,235 \\
+\Code{audit cost router} & 3,575 \\
+\Code{audit cost hierarchical} & 3,675 \\
+\Code{retrieval success} & 1.000000 \\
+\Code{reopen equivalence} & true \\
+\Code{drift status} & \Code{NO\_DRIFT} \\
+\Code{guard decision} & \TinyCode{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED} \\
+\bottomrule
+\end{longtable}
+
+Temps observe: \Code{real 0.38s}.
+
+\section{Mix de topologies}
+
+{\small
+\begin{longtable}{@{}p{0.42\linewidth}r@{}}
+\toprule
+Topologie & Poids route \\
+\midrule
+\Code{hierarchical\_tile\_fiber} & 640 \\
+\Code{trie\_prefix\_fiber} & 384 \\
+\Code{hypergraph\_tag\_fiber} & 256 \\
+\Code{baseline\_linear\_fiber} & 128 \\
+\Code{graph\_adjacency\_fiber} & 128 \\
+\Code{refused\_guard} & 128 \\
+\bottomrule
+\end{longtable}
+}
+
+\section{Carte de phase}
+
+\begin{longtable}{@{}lrrrr@{}}
+\toprule
+Campagne & Green & Yellow & Red & Grey \\
+\midrule
+standard & 96 & 92 & 52 & 0 \\
+ambitious & 0 & 168 & 72 & 0 \\
+\bottomrule
+\end{longtable}
+
+\section{Vue ratio/gain}
+
+\begin{longtable}{@{}p{0.38\linewidth}rr@{}}
+\toprule
+Metrique & Standard & Ambitious \\
+\midrule
+router & 4.759326 & 4.743249 \\
+hierarchical-only & 4.831165 & 4.843523 \\
+linear-only & 3.694047 & 3.330396 \\
+cubical-only & 2.719257 & 2.179646 \\
+P72 baseline & 2.366879 & 2.366879 \\
+P73 cubical & 2.679054 & 2.679054 \\
+\bottomrule
+\end{longtable}
+
+\section{Interpretation}
+
+Le routeur conserve plus de 0.95 du ratio hierarchical-only et reduit les couts
+update/audit. Il respecte le guard, la reouverture et le cout mesure. Le signal
+est fort, mais la promotion est retenue: P75 ne mesure pas encore les mauvais
+routages par rapport a un oracle par fibre.
+
+\section{Decision}
+
+\Decision{RECALIBRATE_P75_ROUTER_POLICY}.
+
+\section{Limites}
+
+\begin{itemize}
+  \item corpus locaux deterministes avec expansion a 10 MiB;
+  \item pas de dataset externe ni de run multi-machine;
+  \item confiance de route heuristique;
+  \item pas encore d'oracle de mauvais routage;
+  \item stores P75 = artefacts de bench, pas format final.
+\end{itemize}
+
+\section{Recommendation P76}
+
+P76 doit tester un oracle de qualite de routage: route choisie contre meilleure
+topologie par fibre, cout des mauvais routages, churn sous update, et manifeste
+mixed-router plus long avant promotion.
+
+\section{Journal}
+
+\begin{itemize}
+  \item 2026-05-02: ajout de \Code{src/p75.rs};
+  \item 2026-05-02: ajout de \Code{mixed-topology-bench};
+  \item 2026-05-02: ajout des contrats P75 valides/invalides;
+  \item 2026-05-02: campagnes standard et ambitious executees localement;
+  \item 2026-05-02: Results P75 compile avec Tectonic.
+\end{itemize}
+
+\end{document}

@@ -59,6 +59,15 @@ incompressible, cout filesystem mesure, `ratio_living`, `runtime_peak_bytes`,
 restent autorises, mais seulement comme parser/typechecker, compatibilite et
 non-regression.
 
+## LaTeX quality
+
+A partir de P75, Codex doit anticiper les warnings LaTeX avant de figer un PDF
+Results: tableaux compacts, colonnes `p{...}`, listes quand un tableau serait
+trop large, identifiants techniques raccourcis ou casses proprement. Les
+warnings `Overfull \hbox` ou `Underfull \hbox` doivent etre corriges quand ils
+sont raisonnablement actionnables. Un warning restant ne peut etre accepte que
+s'il est mineur, documente et non bloquant.
+
 ## Results LaTeX/PDF
 
 Le rapport Markdown d'analyse reste la trace vivante. Le `.tex` et le `.pdf`

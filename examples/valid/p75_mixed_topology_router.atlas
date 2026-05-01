@@ -1,0 +1,8 @@
+atlas version=0.1;
+p75_router_probe router=mixed;
+topology_router id=mixed_router default=hierarchical_tile guard_policy=refuse_or_raw_no_gain fallback=bounded hidden_router_storage=false;
+route corpus=code path_heavy=trie_prefix relation_heavy=graph_adjacency default=hierarchical_tile;
+route corpus=logs prefix_heavy=trie_prefix tag_heavy=hypergraph_tag default=hierarchical_tile;
+route corpus=json path_heavy=trie_prefix tag_heavy=hypergraph_tag default=hierarchical_tile;
+route corpus=csv update_heavy=linear sparse_tile=hierarchical_tile default=hierarchical_tile;
+router_gates living_memory_only=true target_source_bytes=10485760 reopen_equivalence=true guard_no_false_gain=true hidden_router_storage=false ratio_living_reported=true;
