@@ -1,7 +1,8 @@
 use crate::{
     bench_report_json, export_json_file, metrics_json_file, p57_report_json_file,
-    p58_metrics_json_file, p58_report_json_file, p58_report_markdown_file, run_workload_file,
-    validate_file, DiagnosticCode, WorkloadMode,
+    p58_metrics_json_file, p58_report_json_file, p58_report_markdown_file,
+    p61_virtual_ratio_report_json_file, run_workload_file, validate_file, DiagnosticCode,
+    WorkloadMode,
 };
 use std::env;
 
@@ -42,6 +43,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "metrics" => metrics_command(args),
         "report" => report_command(args),
         "bench" => bench_command(args),
+        "ratio" => ratio_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -180,6 +182,23 @@ fn bench_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn ratio_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("ratio requires a .atlas path"))?;
+    let options = parse_options(&args[2..], "ratio")?;
+    let mode = options
+        .mode
+        .ok_or_else(|| usage("ratio requires --mode smoke|standard|ambitious"))?;
+    if options.format != Some(OutputFormat::Json) {
+        return Err(usage("ratio requires --format json"));
+    }
+    let json = p61_virtual_ratio_report_json_file(path, mode)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    println!("{}", json);
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -277,6 +296,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli metrics <file.atlas> [--mode smoke|standard|ambitious] --format json",
         "  atlas-cli report <file.atlas> [--mode smoke|standard|ambitious] --format json|markdown",
         "  atlas-cli bench --mode smoke|standard|ambitious [--format json]",
+        "  atlas-cli ratio <file.atlas> --mode smoke|standard|ambitious --format json",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

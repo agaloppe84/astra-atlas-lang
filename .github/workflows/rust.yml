@@ -110,3 +110,14 @@ jobs:
           diff -u tests/golden/p58_report_standard.json /tmp/p58_report_standard.json
           grep -q '"decision": "RECALIBRATE"' /tmp/p58_report_smoke.json
           grep -q '"decision": "VALIDATE"' /tmp/p58_report_standard.json
+
+      - name: P61 virtual ratio smoke
+        run: |
+          set -euo pipefail
+          cargo run --bin atlas-cli -- ratio examples/p53_strict.atlas \
+            --mode smoke --format json > /tmp/p61_ratio_smoke.json
+          diff -u tests/golden/p61_ratio_smoke.json /tmp/p61_ratio_smoke.json
+          grep -q '"astra_iteration": "ASTRA-P61"' /tmp/p61_ratio_smoke.json
+          grep -q '"ratio_effective": 28.361345' /tmp/p61_ratio_smoke.json
+          grep -q '"decision": "RECALIBRATE_P61_RATIO_COST_MODEL"' /tmp/p61_ratio_smoke.json
+          grep -q '"read_p50_us": null' /tmp/p61_ratio_smoke.json

@@ -5,8 +5,10 @@ use std::fs;
 pub mod cli;
 mod p57;
 mod runtime;
+mod virtual_ratio;
 pub use p57::*;
 pub use runtime::*;
+pub use virtual_ratio::*;
 
 const MIN_THRESHOLD: f64 = 0.05;
 const MAX_THRESHOLD: f64 = 0.50;

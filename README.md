@@ -18,6 +18,7 @@ cargo run -p atlas-cli -- report examples/p53_strict.atlas --mode standard --for
 cargo run -p atlas-cli -- bench --mode smoke
 cargo run -p atlas-cli -- bench --mode standard
 cargo run -p atlas-cli -- bench --mode standard --format json
+cargo run -p atlas-cli -- ratio examples/p53_strict.atlas --mode smoke --format json
 ```
 
 After `cargo build`, the same CLI is available as `atlas-cli`. The `atlasc`
@@ -59,3 +60,10 @@ runtime ni changement de grammaire `.atlas`. Voir
 P60 nettoie les entrees CLI, specialise les diagnostics invalides et ajoute une
 trace JSON de benchmark structurel. Voir
 [docs/validation_p60_sys_cleanup.md](docs/validation_p60_sys_cleanup.md).
+
+## Validation P61 ratio virtuel
+
+P61 introduit un laboratoire deterministe et conservateur pour le ratio virtuel
+effectif `virtual_effective / real_total_cost_units`. Le modele de cout reste un
+proxy, sans revendication de validation scientifique. Voir
+[docs/validation_p61_virtual_ratio_lab.md](docs/validation_p61_virtual_ratio_lab.md).
