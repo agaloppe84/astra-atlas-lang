@@ -1,0 +1,9 @@
+atlas version=0.1;
+p69_contract id=p71_hidden_raw_fallback architecture=address_fiber_actor_managed_v1 cost_model=measured_or_declared_contract_v1;
+address_space name=virtual_grid dimensions=2 addressing=tile_point coordinate_type=integer virtual_declared_units=64000000;
+fiber_schema name=hybrid_field_tile fiber_kind=hybrid_field_tile_fiber address=tile projection=shallow payload=global_plus_local_atoms residual=sparse_delta index=local_tile_index journal=compact audit=minimal compaction=threshold fiber_declared_units=9600000 fiber_generated_units=54000 fiber_effective_units=8448000 virtual_effective_units=8448000;
+generator name=hybrid_field_generator global_component=low_order_basis local_component=kernel_atoms parameters=quantized dictionary=compact_rom generator_code_bytes=4096 parameter_bytes=16384 dictionary_or_rom_bytes=32768 residual_bytes=65536;
+actor_policy name=single_local_actor budget_bytes=4194304 cache=compact journal=compact audit=minimal compaction=threshold actor_state_bytes=12288 cache_bytes=8192 journal_bytes=4096;
+representation_contract name=address_fiber_contract address_space=virtual_grid fiber_schema=hybrid_field_tile generator=hybrid_field_generator actor_policy=single_local_actor;
+stored generator_code=accounted parameters=accounted dictionary=accounted index=accounted residuals=unaccounted journal=accounted cache=accounted actor_state=accounted audit_metadata=accounted manifest=accounted safety_metadata=accounted index_bytes=24576 audit_metadata_bytes=4096 manifest_bytes=2048 safety_metadata_bytes=2048;
+contract_gates all_storage_counted=true address_fiber_net_gain=17.379955 actor_overhead_ratio=0.123446 conflicts=0 stale_reads=0 budget_refusals=0 budget_refusal_rate=0.0;

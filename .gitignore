@@ -42,3 +42,6 @@ artifacts/p69/
 
 # P70 local contract replay exports
 artifacts/p70/
+
+# P71 local filesystem fiber store exports
+artifacts/p71/

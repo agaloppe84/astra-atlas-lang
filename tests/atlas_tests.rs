@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 33] {
+fn invalid_cases() -> [InvalidCase; 38] {
     [
         InvalidCase {
             name: "bad_version",
@@ -272,6 +272,46 @@ fn invalid_cases() -> [InvalidCase; 33] {
         InvalidCase {
             name: "p70_hidden_storage_risk_high",
             text: include_str!("../examples/invalid/p70_hidden_storage_risk_high.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p71_hidden_raw_fallback",
+            text: include_str!("../examples/invalid/p71_hidden_raw_fallback.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p71_missing_checksum_store",
+            text: include_str!("../examples/invalid/p71_missing_checksum_store.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p71_unaccounted_dictionary",
+            text: include_str!("../examples/invalid/p71_unaccounted_dictionary.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p71_budget_exceeded_contract",
+            text: include_str!("../examples/invalid/p71_budget_exceeded_contract.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p71_false_guard_gain",
+            text: include_str!("../examples/invalid/p71_false_guard_gain.atlas"),
             code: DiagnosticCode::ParseError,
             family: None,
             field: None,

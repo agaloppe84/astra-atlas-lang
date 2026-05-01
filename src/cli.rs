@@ -11,7 +11,8 @@ use crate::{
     P65QueryLocality, P65RatioActorsOptions, P66JournalPolicy, P66RateProfile,
     P66RatioFibersOptions, P67AuditPolicy, P67CachePolicy, P67CompactionPolicy,
     P67FiberCalibrationOptions, P67FiberProjectionDepth, P67QueryLocality, P68PromotionOptions,
-    P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, WorkloadMode,
+    P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, P71FiberStoreOptions,
+    RealDataCorpusKind, WorkloadMode,
 };
 use std::env;
 
@@ -67,6 +68,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "contract-check" => contract_check_command(args),
         "contract-run" => contract_run_command(args),
         "contract-replay" => contract_replay_command(args),
+        "fiber-store-bench" => fiber_store_bench_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -480,6 +482,17 @@ fn contract_replay_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn fiber_store_bench_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p71_fiber_store_options(&args[1..])?;
+    let report = crate::p71_fiber_store_bench(options.options, &options.export_dir)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p71_fiber_store_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p71_fiber_store_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -561,6 +574,13 @@ struct P69ContractRunCliOptions {
 struct P70ContractReplayCliOptions {
     options: P70ContractReplayOptions,
     export_dir: Option<String>,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P71FiberStoreCliOptions {
+    options: P71FiberStoreOptions,
+    export_dir: String,
     format: OutputFormat,
 }
 
@@ -2000,6 +2020,132 @@ fn parse_p70_fixtures(value: &str) -> Result<Vec<P70ReplayFixtureKind>, String> 
     Ok(fixtures)
 }
 
+fn parse_p71_fiber_store_options(args: &[String]) -> Result<P71FiberStoreCliOptions, String> {
+    let mut corpora = None;
+    let mut budget_bytes = None;
+    let mut runs = None;
+    let mut queries = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--corpus" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("fiber-store-bench requires a value after --corpus"))?;
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corpus=") {
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 1;
+        } else if arg == "--budget-bytes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("fiber-store-bench requires a value after --budget-bytes"))?;
+            budget_bytes = Some(parse_positive_u64(
+                value,
+                "fiber-store-bench",
+                "--budget-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--budget-bytes=") {
+            budget_bytes = Some(parse_positive_u64(
+                value,
+                "fiber-store-bench",
+                "--budget-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--runs" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("fiber-store-bench requires a value after --runs"))?;
+            runs = Some(parse_positive_usize(value, "fiber-store-bench", "--runs")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--runs=") {
+            runs = Some(parse_positive_usize(value, "fiber-store-bench", "--runs")?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("fiber-store-bench requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(
+                value,
+                "fiber-store-bench",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "fiber-store-bench",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("fiber-store-bench requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("fiber-store-bench requires a value after --format"))?;
+            format = Some(parse_format_value(value, "fiber-store-bench")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "fiber-store-bench")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "fiber-store-bench received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P71FiberStoreCliOptions {
+        options: P71FiberStoreOptions {
+            corpora: corpora.ok_or_else(|| {
+                usage("fiber-store-bench requires --corpus all|code|logs|json|csv|guard")
+            })?,
+            budget_bytes: budget_bytes
+                .ok_or_else(|| usage("fiber-store-bench requires --budget-bytes N"))?,
+            runs: runs.ok_or_else(|| usage("fiber-store-bench requires --runs N"))?,
+            queries: queries.ok_or_else(|| usage("fiber-store-bench requires --queries N"))?,
+        },
+        export_dir: export_dir
+            .ok_or_else(|| usage("fiber-store-bench requires --export-dir <path>"))?,
+        format: format.ok_or_else(|| usage("fiber-store-bench requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p71_corpora(value: &str) -> Result<Vec<RealDataCorpusKind>, String> {
+    if value == "all" {
+        return Ok(crate::p71_all_corpora());
+    }
+    let mut corpora = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        let corpus = RealDataCorpusKind::from_str(item).ok_or_else(|| {
+            usage(format!(
+                "fiber-store-bench received unsupported corpus '{}'; expected all|code|logs|json|csv|guard",
+                item
+            ))
+        })?;
+        corpora.push(corpus);
+    }
+    if corpora.is_empty() {
+        return Err(usage("fiber-store-bench requires non-empty --corpus"));
+    }
+    Ok(corpora)
+}
+
 fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
     match value {
         "true" | "on" | "yes" => Ok(true),
@@ -2335,6 +2481,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli contract-check <file.atlas> --format json",
         "  atlas-cli contract-run <file.atlas> --mode smoke|standard|ambitious --runs N --queries N [--export-dir <path>] --format json|markdown",
         "  atlas-cli contract-replay <file.atlas> --fixtures all|log|sparse|json|hybrid --mode smoke|standard|ambitious --runs N --queries N --tolerance-percent N [--export-dir <path>] --format json|markdown",
+        "  atlas-cli fiber-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --runs N --queries N --export-dir <path> --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

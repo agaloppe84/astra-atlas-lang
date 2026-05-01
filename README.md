@@ -300,6 +300,30 @@ l'audit de tests
 et le rapport d'analyse
 [docs/analysis/ASTRA-P70-contract-replay-test-stack-analysis.md](docs/analysis/ASTRA-P70-contract-replay-test-stack-analysis.md).
 
+## Validation P71 filesystem fiber store
+
+P71 ajoute `fiber-store-bench` pour construire un Fiber Store reel sur
+filesystem local, mesurer les bytes payes, decoder des fibres par adresse,
+executer des queries deterministes, et verifier qu'un corpus incompressible ne
+produit pas de faux gain.
+
+```bash
+cargo run -p atlas-cli -- fiber-store-bench \
+  --corpus all \
+  --budget-bytes 10485760 \
+  --runs 30 \
+  --queries 1000 \
+  --export-dir artifacts/p71/fiber_store_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p71/` et sont ignores par Git. Voir
+[docs/validation/astra-p71-filesystem-fiber-store-real-data.md](docs/validation/astra-p71-filesystem-fiber-store-real-data.md),
+l'audit de tests
+[docs/analysis/ASTRA-P71-test-stack-audit.md](docs/analysis/ASTRA-P71-test-stack-audit.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P71-filesystem-fiber-store-real-data-analysis.md](docs/analysis/ASTRA-P71-filesystem-fiber-store-real-data-analysis.md).
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

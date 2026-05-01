@@ -1,0 +1,322 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P71 Results -- Filesystem Fiber Store Real Data},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+\emergencystretch=3em
+\sloppy
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+
+\title{\textbf{ASTRA-P71 Results}\\Filesystem Fiber Store and Real Data Encode/Decode}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P71 du repo \Code{astra-atlas-lang}. P71
+introduit un Fiber Store local sur filesystem: donnees locales ou realish,
+contrat P69, index address-fiber, residus, journal, checksums, audit metadata,
+decodage exact, retrieval deterministe et garde incompressible. Le budget dur
+teste est de 10 MiB.
+\end{abstract}
+
+\section{But de ASTRA-P71}
+
+P71 teste une question concrete: avec un budget reel de stockage, combien de
+donnee locale peut devenir adressable, decodable, verifiable et utile par un
+stockage procedural fibre? Le sprint ne cherche pas une validation finale; il
+introduit une premiere couche repo-first qui mesure des fichiers reels.
+
+\section{Position apres P70}
+
+P70 avait ajoute le replay contractuel et l'hygiene de la stack de tests:
+
+\begin{itemize}
+  \item \Code{declared_contract_bytes = 176128};
+  \item \Code{measured_runtime_bytes_median = 180224};
+  \item \Code{max_delta_percent = 3.488372};
+  \item \Code{drift_status = NO_DRIFT};
+  \item invalides P70: 5/5 refuses;
+  \item decision: \Decision{RECALIBRATE_P70_CONTRACT_DRIFT}.
+\end{itemize}
+
+P71 passe du replay compact au stockage filesystem reel.
+
+\section{Modele FiberStore}
+
+Le Fiber Store contient un manifeste, le contrat, un index d'adresses, des
+dictionnaires, generateurs, residus, journaux, checksums, metadata d'audit,
+etat acteur et raw fallback explicite. Toutes ces categories sont mesurees par
+metadata filesystem.
+
+\section{Corpus}
+
+\begin{longtable}{@{}p{0.36\linewidth}r r@{}}
+\toprule
+Corpus & Source bytes & Records \\
+\midrule
+\endhead
+\Code{real_code_corpus} & 1,248,734 & 100 \\
+\Code{realish_logs_corpus} & 10,912 & 96 \\
+\Code{realish_json_records} & 6,222 & 64 \\
+\Code{sparse_csv_table} & 1,102 & 72 \\
+\Code{incompressible_guard_blob} & 65,536 & 1 \\
+\bottomrule
+\end{longtable}
+
+Le corpus code vient du repo local: sources Rust, tests, exemples \Code{.atlas},
+documentation de validation, et rapports d'analyse historiques. Les fichiers
+d'analyse P71 courants sont exclus pour eviter une mesure auto-referentielle.
+
+\section{Encodage et store filesystem}
+
+Commande principale:
+
+\begin{verbatim}
+cargo run -p atlas-cli -- fiber-store-bench \
+  --corpus all \
+  --budget-bytes 10485760 \
+  --runs 30 \
+  --queries 1000 \
+  --export-dir artifacts/p71/fiber_store_standard \
+  --format json
+\end{verbatim}
+
+Dur\'ee observee: \Code{real 0.31s}.
+
+\section{Budget et cout filesystem}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{budget_bytes} & 10,485,760 \\
+\Code{filesystem_store_bytes} & 747,457 \\
+\Code{budget_used_percent} & 7.128305 \\
+\Code{budget_pass} & true \\
+\bottomrule
+\end{longtable}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Categorie & Bytes \\
+\midrule
+\endhead
+\Code{manifest_bytes} & 110 \\
+\Code{contract_bytes} & 119 \\
+\Code{generator_bytes} & 57 \\
+\Code{parameter_bytes} & 0 \\
+\Code{dictionary_bytes} & 66 \\
+\Code{index_bytes} & 39,543 \\
+\Code{residual_bytes} & 654,127 \\
+\Code{journal_bytes} & 21,312 \\
+\Code{checksum_bytes} & 16,260 \\
+\Code{audit_metadata_bytes} & 89 \\
+\Code{actor_state_bytes} & 15,698 \\
+\Code{raw_fallback_bytes} & 76 \\
+\Code{report_overhead_bytes} & 0 \\
+\Code{total_store_bytes} & 747,457 \\
+\bottomrule
+\end{longtable}
+
+\section{Decodage exact}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{sample_count} & 332 \\
+\Code{exact_roundtrip_count} & 332 \\
+\Code{missing_fiber_count} & 0 \\
+\Code{corrupted_fiber_count} & 0 \\
+\Code{checksum_pass_rate} & 1.000000 \\
+\Code{roundtrip_success_rate} & 1.000000 \\
+\Code{exact_recoverable_bytes} & 1,266,970 \\
+\bottomrule
+\end{longtable}
+
+\section{Retrieval}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{query_count} & 82 \\
+\Code{successful_queries} & 82 \\
+\Code{precision} & 1.000000 \\
+\Code{recall} & 1.000000 \\
+\Code{exact_match_rate} & 1.000000 \\
+\Code{useful_retrieved_bytes} & 79,972 \\
+\Code{query_success_rate} & 1.000000 \\
+\bottomrule
+\end{longtable}
+
+\section{Garde incompressible}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{guard_source_bytes} & 65,536 \\
+\Code{guard_store_bytes} & 0 \\
+\Code{guard_refused} & true \\
+\Code{guard_no_false_gain} & true \\
+\bottomrule
+\end{longtable}
+
+Decision garde: \Decision{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED}.
+
+\section{Declared vs measured bytes}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{declared_total_bytes} & 176,128 \\
+\Code{measured_total_store_bytes} & 747,457 \\
+\Code{delta_percent} & 324.382835 \\
+\Code{drift_status} & HARD\_DRIFT \\
+\bottomrule
+\end{longtable}
+
+Ce drift est le resultat le plus important de P71. Le contrat P69 etait calibre
+sur des fixtures compactes; le store reel paie les residus et index du corpus
+repo. P71 ne peut donc pas valider le modele de cout contractuel.
+
+\section{Ratios}
+
+\begin{longtable}{@{}p{0.56\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{source_dataset_bytes} & 1,332,506 \\
+\Code{exact_recoverable_bytes} & 1,266,970 \\
+\Code{useful_retrieved_bytes} & 79,972 \\
+\Code{exact_bytes_per_store_byte} & 1.695041 \\
+\Code{useful_retrieved_bytes_per_store_byte} & 0.106992 \\
+\Code{procedural_store_gain_vs_raw} & 1.782719 \\
+\bottomrule
+\end{longtable}
+
+\section{Vue P71}
+
+\begin{verbatim}
+P71 fiber store view
+budget bytes                         : 10,485,760
+source dataset bytes                  : 1,332,506
+filesystem store bytes                : 747,457
+exact recoverable bytes               : 1,266,970
+useful retrieved bytes                : 79,972
+exact bytes / store byte              : 1.695041
+useful retrieved bytes / store byte   : 0.106992
+procedural store gain vs raw          : 1.782719
+guard decision                        : NO_GO_GUARD_INCOMPRESSIBLE_REFUSED
+roundtrip success rate                : 1.000000
+retrieval success rate                : 1.000000
+declared/measured drift               : HARD_DRIFT
+decision                              : RECALIBRATE_P71_CONTRACT_COST_MODEL
+\end{verbatim}
+
+\section{Validation locale}
+
+\begin{longtable}{@{}p{0.58\linewidth}p{0.18\linewidth}p{0.18\linewidth}@{}}
+\toprule
+Commande & Statut & Sortie importante \\
+\midrule
+\endhead
+\Code{cargo fmt --all -- --check} & PASS & format OK \\
+\Code{cargo build --workspace} & PASS & build OK \\
+\Code{cargo test --test p71_tests} & PASS & 14 tests passes \\
+\Code{fiber-store-bench standard} & PASS & real 0.31s \\
+\bottomrule
+\end{longtable}
+
+Les autres commandes de validation complete sont tracees dans le rapport
+Markdown vivant P71.
+
+\section{Test Stack Hygiene}
+
+P71 ajoute \Code{tests/p71_tests.rs}, met a jour \Code{tests/atlas_tests.rs}
+pour suivre cinq invalides P71, et ne supprime aucun test. Voir
+\Code{docs/analysis/ASTRA-P71-test-stack-audit.md}.
+
+\section{Decision P71}
+
+\begin{center}
+\Decision{RECALIBRATE_P71_CONTRACT_COST_MODEL}
+\end{center}
+
+Le budget, le roundtrip, le retrieval et le garde incompressible passent. La
+decision reste conservatrice a cause du \Code{HARD_DRIFT} declared-vs-measured.
+
+\section{Ce que P71 etablit}
+
+\begin{itemize}
+  \item Un store address-fiber peut etre ecrit sur filesystem local.
+  \item Les couts sont mesures par fichiers reels.
+  \item Le decodage exact et les checksums passent sur les corpus exacts.
+  \item Les queries deterministes retrouvent les donnees utiles attendues.
+  \item Le corpus incompressible est refuse sans faux gain.
+\end{itemize}
+
+\section{Ce que P71 ne prouve pas encore}
+
+\begin{itemize}
+  \item Le modele de cout contractuel P69 n'est pas calibre pour un store reel.
+  \item Les policies d'encodage sont encore simples.
+  \item Aucun dataset externe n'est utilise.
+  \item Les queries restent deterministes et locales au repo.
+\end{itemize}
+
+\section{Recommandation P72}
+
+P72 doit recalibrer le modele de cout des stores filesystem: distinguer cout du
+contrat, cout des residus par corpus, cout des indexes, cout de journal/audit,
+et comparer explicitement raw, dictionary, grammar-token et generated-plus-
+residual par corpus.
+
+\section{Journal}
+
+\begin{itemize}
+  \item P71: ajout de \Code{src/p71.rs}, commande \Code{fiber-store-bench},
+  invalides P71, tests P71, rapports Markdown et Results.
+  \item Campagne locale: budget pass, roundtrip pass, retrieval pass, guard
+  refused, \Code{HARD_DRIFT}, decision
+  \Decision{RECALIBRATE_P71_CONTRACT_COST_MODEL}.
+\end{itemize}
+
+\end{document}
