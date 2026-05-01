@@ -1,0 +1,351 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P65 Results -- Address-Local Actor Runtime},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+\newcommand{\SmallCode}[1]{\footnotesize\texttt{\detokenize{#1}}}
+
+\title{\textbf{ASTRA-P65 Results}\\Address-Local Actor Runtime}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P65 du repo \Code{astra-atlas-lang}. La trace
+vivante reste le rapport Markdown d'analyse P65. Ce document \LaTeX{}/PDF est
+le livrable Results fig\'e pour l'exp\'erience d'acteurs locaux adress\'es. Aucun
+r\'esultat nouveau n'est invent\'e ici.
+\end{abstract}
+
+\section{But de ASTRA-P65}
+
+ASTRA-P65 teste une architecture d'acteurs locaux d\'eterministes \`a budget.
+Le but est de comprendre si le ratio ASTRA vient seulement de la g\'en\'eration
+locale, ou du couple:
+
+\[
+  \text{adresse locale} + \text{acteur local \`a budget}
+\]
+
+Un acteur local est responsable d'un voisinage adress\'e \(N(A,r)\). Il peut
+ex\'ecuter CRUD, audit, cache, \'eviction et compaction sans mat\'erialiser
+l'espace virtuel global.
+
+\section{Position apr\`es P64}
+
+P64 a ajout\'e les workloads realish et la politique
+\Code{address_local_generation}. Le r\'esultat standard P64 a montr\'e:
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+M\'etrique P64 standard & Valeur\\
+\midrule
+\Code{virtual_declared} & 132\,000\,000\\
+\Code{virtual_generated_local} & 2\,296\,000\\
+\Code{virtual_effective} & 22\,600\,000\\
+\Code{real_persisted_bytes} & 14\,997\,283\\
+\Code{ratio_effective_per_byte} & 1.506940\\
+\Code{gain_vs_materialized} & 70.412754\\
+\Code{effective_gain_vs_materialized} & 12.055517\\
+\Code{locality_selectivity} & 0.017394\\
+\bottomrule
+\end{longtable}
+
+P64 a donc valid\'e l'axe R\&D \Code{address-local}, mais a aussi montr\'e que le
+co\^ut augmente vite sous pression. P65 teste si un acteur local \`a budget peut
+amortir cache, journal, audit et actions locales.
+
+\section{Hypoth\`ese centrale: acteurs locaux adress\'es}
+
+\begin{verbatim}
+LocalActor(A, r) =
+  neighborhood N(A, r)
+  + cache local
+  + index local
+  + journal local
+  + queue d'actions
+  + audit local
+  + budget bytes/temps/actions
+  + regles de refus
+\end{verbatim}
+
+L'hypoth\`ese P65 est:
+
+\begin{quote}
+Un acteur local est une m\'emoire compt\'ee et limit\'ee. Il n'est utile que s'il
+amortit plus de co\^ut qu'il n'en ajoute.
+\end{quote}
+
+Les acteurs P65 sont d\'eterministes. Ils ne sont pas des agents LLM et ne
+portent aucune autonomie non d\'eterministe.
+
+\section{Mod\`ele LocalActor}
+
+Chaque \Code{LocalActor} expose au minimum:
+
+\begin{itemize}
+  \item identifiant d'acteur, adresse d'ancrage et rayon local;
+  \item budget en octets et budget d'actions;
+  \item cache, index, journal, queue, audit et compaction;
+  \item octets d'\'etat, cache, index, journal, queue, audit et coordination;
+  \item actions CRUD/audit/cache/evict/compact;
+  \item conflits, lectures obsol\`etes et refus par budget.
+\end{itemize}
+
+Tout \'etat d'acteur est un co\^ut r\'eel. Toute coordination est un co\^ut
+syst\`eme.
+
+\section{Strat\'egies test\'ees}
+
+\begin{longtable}{@{}p{0.32\linewidth}p{0.58\linewidth}@{}}
+\toprule
+Strat\'egie & R\^ole\\
+\midrule
+\Code{no_actor_address_local} & baseline P64 address-local sans acteur persistant\\
+\Code{single_local_actor} & un acteur local \`a budget par groupe de voisinages actifs\\
+\Code{specialized_crud_actors} & acteurs CRUD sp\'ecialis\'es avec coordination compt\'ee\\
+\Code{over_agentic_stress} & d\'ecomposition excessive volontaire pour mesurer la d\'egradation\\
+\bottomrule
+\end{longtable}
+
+\section{Impl\'ementation repo-first}
+
+P65 ajoute:
+
+\begin{itemize}
+  \item \Code{src/p65.rs};
+  \item la commande \Code{ratio-actors};
+  \item les exports P65 compacts: JSON, JSONL, Markdown et CSV;
+  \item les tests P65;
+  \item le rapport d'analyse Markdown P65.
+\end{itemize}
+
+Les artefacts de campagne restent sous \Code{artifacts/p65/} et ne sont pas
+committ\'es.
+
+\section{Validation locale}
+
+\begin{longtable}{@{}p{0.65\linewidth}r@{}}
+\toprule
+Commande / gate & Statut\\
+\midrule
+\Code{cargo fmt --all -- --check} & PASS\\
+\Code{cargo build --workspace} & PASS\\
+\Code{cargo test --workspace} & PASS\\
+\Code{p65_tests.rs} & 11 passed\\
+\Code{p64_tests.rs} & 10 passed\\
+\Code{p63_tests.rs} & 18 passed\\
+\Code{cargo test --test p64_tests} & PASS\\
+\Code{bash scripts/validate_p58_local.sh} & PASS\\
+Corpus invalide & 21/21 refus\'e\\
+\Code{git diff --check} & PASS\\
+\Code{artifacts/p65/} ignor\'e par Git & PASS\\
+\bottomrule
+\end{longtable}
+
+\section{Campagne standard}
+
+Param\`etres:
+\Code{runs = 30}, \Code{queries = 1000},
+\Code{budget_bytes = 1,048,576}. Dur\'ee observ\'ee: \Code{real 0.29s}.
+
+\begin{longtable}{@{}lr@{}}
+\toprule
+M\'etrique & Valeur\\
+\midrule
+Meilleure strat\'egie & \Code{single_local_actor}\\
+Ratio baseline no actor & 1.506940\\
+Ratio single actor & 2.001853\\
+Gain relatif approx. & +32.84\%\\
+\Code{actor_overhead_bytes} & 2\,400\,069\\
+\Code{actor_overhead_ratio} & 0.212592\\
+\Code{cache_hit_rate} & 0.473767\\
+Conflits & 0\\
+Lectures obsol\`etes & 0\\
+D\'ecision & \Decision{RECALIBRATE_P65_ACTOR_OVERHEAD}\\
+\bottomrule
+\end{longtable}
+
+\section{Campagne ambitious}
+
+Param\`etres:
+\Code{runs = 50}, \Code{queries = 5000},
+\Code{budget_bytes = 4,194,304}. Dur\'ee observ\'ee: \Code{real 0.30s}.
+
+\begin{longtable}{@{}lr@{}}
+\toprule
+M\'etrique & Valeur\\
+\midrule
+Meilleure strat\'egie & \Code{single_local_actor}\\
+Ratio baseline no actor & 0.189578\\
+Ratio single actor & 0.251424\\
+Gain relatif approx. & +32.62\%\\
+\Code{actor_overhead_bytes} & 19\,276\,561\\
+\Code{actor_overhead_ratio} & 0.214451\\
+\Code{cache_hit_rate} & 0.536252\\
+Conflits & 0\\
+Lectures obsol\`etes & 0\\
+D\'ecision & \Decision{RECALIBRATE_P65_ACTOR_OVERHEAD}\\
+\bottomrule
+\end{longtable}
+
+\section{Comparaison des strat\'egies}
+
+{\footnotesize
+\begin{longtable}{@{}lrrrrrrrl@{}}
+\toprule
+Mode & Baseline & Single & Gain & Overhead & Cache & Conf. & Stale & D\'ecision\\
+\midrule
+standard & 1.506940 & 2.001853 & +32.84\% & 0.212592 & 0.473767 & 0 & 0 & \Code{RECALIBRATE}\\
+ambitious & 0.189578 & 0.251424 & +32.62\% & 0.214451 & 0.536252 & 0 & 0 & \Code{RECALIBRATE}\\
+\bottomrule
+\end{longtable}
+}
+
+\Code{single_local_actor} est la meilleure strat\'egie observ\'ee. Le baseline
+\Code{no_actor_address_local} est battu. \Code{specialized_crud_actors}
+surcharge. \Code{over_agentic_stress} d\'egrade fortement avec conflits et
+lectures obsol\`etes.
+
+\section{Analyse de l'overhead acteur}
+
+L'overhead de l'acteur local reste autour de 21\% du co\^ut total:
+
+\begin{itemize}
+  \item standard: \Code{actor_overhead_ratio = 0.212592};
+  \item ambitious: \Code{actor_overhead_ratio = 0.214451}.
+\end{itemize}
+
+Ce niveau d'overhead est compatible avec un signal R\&D positif, mais il est
+trop important pour pr\'etendre valider l'architecture finale. P65 mesure une
+direction prometteuse, pas une limite scientifique.
+
+\section{Analyse cache / journal / audit}
+
+Le cache local est le facteur d'amortissement visible:
+
+\begin{itemize}
+  \item standard: \Code{cache_hit_rate = 0.473767};
+  \item ambitious: \Code{cache_hit_rate = 0.536252}.
+\end{itemize}
+
+Les campagnes \Code{single_local_actor} ne produisent ni conflit ni lecture
+obsol\`ete. Les strat\'egies plus fragment\'ees ajoutent de la coordination et
+d\'egradent le ratio.
+
+\section{Vue ratio/gain}
+
+\begin{verbatim}
+Address-local actor view
+baseline no actor ratio        : 1.506940 standard / 0.189578 ambitious
+single local actor ratio       : 2.001853 standard / 0.251424 ambitious
+relative gain                  : +32.84% standard / +32.62% ambitious
+actor overhead ratio           : 0.212592 standard / 0.214451 ambitious
+cache hit rate                 : 0.473767 standard / 0.536252 ambitious
+conflicts / stale reads        : 0 / 0 for single local actor
+best actor strategy            : single_local_actor
+decision                       : RECALIBRATE_P65_ACTOR_OVERHEAD
+\end{verbatim}
+
+\section{D\'ecision}
+
+\begin{longtable}{@{}ll@{}}
+\toprule
+Type & D\'ecision\\
+\midrule
+Repo / impl\'ementation & \Decision{VALIDER_IMPL_P65_ADDRESS_LOCAL_ACTOR_RUNTIME}\\
+Scientifique & \Decision{RECALIBRATE_P65_ACTOR_OVERHEAD}\\
+\bottomrule
+\end{longtable}
+
+La d\'ecision repo valide l'impl\'ementation P65: commande, mod\`ele acteur,
+exports, tests et rapport. La d\'ecision scientifique reste conservatrice car
+les seuils d'overhead, de cache, de journal, de rayon et de budget ne sont pas
+encore calibr\'es.
+
+\section{Ce que P65 \'etablit}
+
+\begin{itemize}
+  \item Les acteurs locaux peuvent am\'eliorer le ratio sur les fixtures P64.
+  \item \Code{single_local_actor} est le meilleur candidat observ\'e.
+  \item Les acteurs locaux am\'eliorent le ratio d'environ 33\%.
+  \item Les strat\'egies trop sp\'ecialis\'ees ou trop fragment\'ees peuvent
+        d\'egrader le syst\`eme.
+  \item Le cache local est un levier concret d'amortissement.
+\end{itemize}
+
+\section{Ce que P65 ne prouve pas encore}
+
+\begin{itemize}
+  \item Pas de validation scientifique finale.
+  \item Pas de dataset externe.
+  \item Pas de campagne multi-machine.
+  \item Pas de seuil calibr\'e pour l'overhead acteur.
+  \item Pas de persistance longue dur\'ee d'un acteur r\'eel.
+  \item Pas de golden de timing.
+\end{itemize}
+
+\section{Recommandation P65-2}
+
+P65-2 doit calibrer:
+
+\begin{itemize}
+  \item overhead acteur acceptable;
+  \item cache hit rate minimal;
+  \item co\^ut journal/audit;
+  \item rayon local;
+  \item budget bytes/actions;
+  \item seuils de conflits et stale reads.
+\end{itemize}
+
+La suite naturelle est de faire de \Code{single_local_actor} le candidat P66,
+mais seulement apr\`es calibration plus stricte.
+
+\section{Conclusion}
+
+P65 valide l'int\'er\^et R\&D des acteurs locaux \`a budget. Le signal est clair:
+\Code{single_local_actor} bat le baseline sans conflit ni stale read dans les
+campagnes locales. Mais l'overhead autour de 21\% impose de rester en
+\Decision{RECALIBRATE_P65_ACTOR_OVERHEAD}.
+
+\section{Journal d'it\'eration}
+
+\begin{itemize}
+  \item P65-1: ajout de \Code{src/p65.rs}, \Code{ratio-actors}, exports P65,
+        tests P65 et rapport d'analyse.
+  \item Validation locale: format, build, tests workspace, tests P64, validation
+        P58 et corpus invalide 21/21.
+  \item Results P65: ce rapport fige les r\'esultats observ\'es sans inventer de
+        nouvelle mesure.
+\end{itemize}
+
+\end{document}
