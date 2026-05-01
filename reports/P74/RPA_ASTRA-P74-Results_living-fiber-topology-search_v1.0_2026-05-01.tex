@@ -1,0 +1,220 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P74 Results -- Living Fiber Topology Search},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\Code{#1}}}
+
+\title{\textbf{ASTRA-P74 Results}\\Living Fiber Topology Search}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+P74 compare six topologies de fibres en mode living-memory avec
+10,485,760 bytes de donnees sources locales deterministes. Le meilleur signal
+observe est \Code{hierarchical_tile_fiber} sur le corpus sparse CSV, mais les
+gains restent dependants du corpus. La decision scientifique reste
+\Decision{RECALIBRATE_P74_FIBER_TOPOLOGY_SEARCH}.
+\end{abstract}
+
+\section{But de ASTRA-P74}
+
+P74 teste quelle topologie de fibre maximise \Code{ratio_living} sur donnees
+structurees, tout en conservant exactitude, retrieval, reopen, update, audit,
+compaction et guard incompressible. Aucune topologie ne stocke plus
+d'information par bit; elle organise seulement les relations locales et les
+residus quand la structure de la donnee s'y prete.
+
+\section{Regle living-memory 10 MiB}
+
+A partir de P74, une decision R\&D sur le ratio memoire virtuelle / memoire
+reelle doit venir d'une campagne living-memory significative: environ 10 MiB de
+donnees sources, cout filesystem mesure, store living, close/reopen,
+\Code{reopen_equivalence}, retrieval utile et guard incompressible. Les tests
+unitaires restent des tests de non-regression.
+
+\section{Topologies testees}
+
+\begin{longtable}{@{}p{0.35\linewidth}p{0.55\linewidth}@{}}
+\toprule
+Topologie & Role \\
+\midrule
+\Code{baseline_linear_fiber} & baseline living simple, faible overhead \\
+\Code{cubical_6face_fiber} & cellules, six faces et gluing \\
+\Code{trie_prefix_fiber} & chemins, tokens, services, JSON paths \\
+\Code{graph_adjacency_fiber} & fichiers, symboles, tests, docs, records lies \\
+\Code{hypergraph_tag_fiber} & tags, severites, services, types \\
+\Code{hierarchical_tile_fiber} & tuiles hierarchiques, CSV sparse et pyramides \\
+\bottomrule
+\end{longtable}
+
+\section{Corpus}
+
+Le corpus P74 est local, sans reseau ni dataset externe. Pour
+\Code{--corpus all}, les 10,485,760 bytes sont repartis entre code, logs, JSON,
+CSV sparse et guard incompressible. Le code corpus peut etre etendu
+deterministiquement pour atteindre le budget cible; ce n'est pas une donnee
+externe.
+
+\section{Validation locale}
+
+\begin{itemize}
+  \item \Code{cargo fmt --all -- --check}: PASS;
+  \item \Code{cargo build --workspace}: PASS;
+  \item \Code{cargo test --workspace}: PASS;
+  \item \Code{cargo test --test p74_tests}: 13 passed;
+  \item \Code{cargo test --test p73_tests}: 12 passed;
+  \item \Code{bash scripts/validate_p58_local.sh}: PASS, 60 invalides refuses;
+  \item invalides P74 dedies: 8/8 refuses;
+  \item \Code{git diff --check}: PASS.
+\end{itemize}
+
+\section{Campagne standard}
+
+\begin{longtable}{@{}p{0.48\linewidth}p{0.42\linewidth}@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\Code{target_source_bytes} & 10,485,760 \\
+\Code{actual_source_bytes} & 10,485,760 \\
+\Code{best_topology_overall} & \Code{hierarchical_tile_fiber} \\
+\Code{best_topology_by_ratio_living} & \Code{hierarchical_tile_fiber} \\
+\Code{best_topology_by_retrieval} & \Code{hierarchical_tile_fiber} \\
+\Code{best_topology_by_update_cost} & \Code{baseline_linear_fiber} \\
+\Code{best_ratio_living} & 4.742439 \\
+\Code{ratio_living_P72_baseline} & 2.366879 \\
+\Code{ratio_living_P73_cubical} & 2.679054 \\
+\Code{phase_map_green_yellow_red} & 163 / 125 / 72 \\
+\Code{guard_decision} & {\scriptsize\Code{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED}} \\
+\Code{reopen_equivalence} & true \\
+\Code{drift_status} & \Code{NO_DRIFT} \\
+\bottomrule
+\end{longtable}
+
+Temps observe: \Code{real 0.40s}.
+
+\section{Campagne ambitious}
+
+\begin{longtable}{@{}p{0.48\linewidth}p{0.42\linewidth}@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\Code{target_source_bytes} & 10,485,760 \\
+\Code{actual_source_bytes} & 10,485,760 \\
+\Code{best_topology_overall} & \Code{hierarchical_tile_fiber} \\
+\Code{best_topology_by_ratio_living} & \Code{hierarchical_tile_fiber} \\
+\Code{best_topology_by_retrieval} & \Code{hierarchical_tile_fiber} \\
+\Code{best_topology_by_update_cost} & \Code{baseline_linear_fiber} \\
+\Code{best_ratio_living} & 4.742450 \\
+\Code{ratio_living_P72_baseline} & 2.366879 \\
+\Code{ratio_living_P73_cubical} & 2.679054 \\
+\Code{phase_map_green_yellow_red} & 163 / 125 / 72 \\
+\Code{guard_decision} & {\scriptsize\Code{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED}} \\
+\Code{reopen_equivalence} & true \\
+\Code{drift_status} & \Code{NO_DRIFT} \\
+\bottomrule
+\end{longtable}
+
+Temps observe: \Code{real 0.50s}.
+
+\section{Meilleurs resultats par corpus}
+
+{\scriptsize
+\begin{longtable}{@{}p{0.14\linewidth}p{0.28\linewidth}p{0.08\linewidth}p{0.11\linewidth}p{0.09\linewidth}p{0.09\linewidth}@{}}
+\toprule
+Corpus & Topologie & Ratio & Cold & Runtime & Overhead \\
+\midrule
+code & \Code{graph_adjacency_fiber} & 4.443323 & 285,706 & 95,006 & 0.095448 \\
+logs & \Code{hypergraph_tag_fiber} & 4.543068 & 266,163 & 84,068 & 0.103658 \\
+JSON & \Code{trie_prefix_fiber} & 4.343689 & 282,994 & 92,562 & 0.075323 \\
+CSV sparse & \Code{hierarchical_tile_fiber} & 4.742439 & 263,462 & 84,767 & 0.083891 \\
+\bottomrule
+\end{longtable}
+}
+
+\section{Carte de phase}
+
+La carte de phase couvre topologie, corpus, localite et pression d'update.
+
+\begin{longtable}{@{}lrrrr@{}}
+\toprule
+Campagne & Green & Yellow & Red & Grey \\
+\midrule
+standard & 163 & 125 & 72 & 0 \\
+ambitious & 163 & 125 & 72 & 0 \\
+\bottomrule
+\end{longtable}
+
+\section{Interpretation}
+
+P74 montre que la topologie est un parametre central. Le meilleur ratio observe
+vient de \Code{hierarchical_tile_fiber} sur CSV sparse, mais les autres corpus
+ont des meilleurs ajustements differents: graphe pour code, hypergraphe pour
+logs, trie pour JSON. Il n'y a donc pas encore de topologie universelle a
+promouvoir.
+
+\section{Decision}
+
+\Decision{RECALIBRATE_P74_FIBER_TOPOLOGY_SEARCH}.
+
+La campagne living-memory passe, le guard reste refuse, le drift est
+\Code{NO_DRIFT}, et les ratios depassent les baselines P72/P73. La promotion
+n'est pas retenue car les gains sont dependants du corpus et le retrieval tie
+actuel doit etre discrimine en P75.
+
+\section{Limites}
+
+\begin{itemize}
+  \item corpus locaux deterministes, pas de dataset externe;
+  \item corpus code etendu deterministiquement;
+  \item retrieval trop peu discriminant dans cette campagne;
+  \item pas de validation multi-machine;
+  \item couts mesures sur stores P74 deterministes, pas format final.
+\end{itemize}
+
+\section{Recommendation P75}
+
+P75 doit tester un routeur de topologie par corpus et famille de fibres:
+graph, trie, hypergraph ou hierarchical selon structure mesuree, avec un
+retrieval plus discriminant, un stress update/audit par topologie, et un
+manifeste candidat mixte.
+
+\section{Journal d'iteration}
+
+\begin{itemize}
+  \item 2026-05-02: ajout du module \Code{p74} et de \Code{topology-living-bench};
+  \item 2026-05-02: ajout de la syntaxe \Code{fiber_topology} et de huit invalides P74;
+  \item 2026-05-02: campagnes standard et ambitious executees localement;
+  \item 2026-05-02: Results P74 genere avec Tectonic via \Code{scripts/build_report.sh}.
+\end{itemize}
+
+\end{document}

@@ -13,7 +13,8 @@ use crate::{
     P67FiberCalibrationOptions, P67FiberProjectionDepth, P67QueryLocality, P68PromotionOptions,
     P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, P71FiberStoreOptions,
     P72CompactionPolicy, P72LivingStoreOptions, P73CompareP72, P73CubicalStoreOptions,
-    RealDataCorpusKind, WorkloadMode,
+    P74CompactionPolicy, P74LocalityProfile, P74TopologyLivingOptions, P74UpdatePressure,
+    RealDataCorpusKind, TopologyKind, WorkloadMode,
 };
 use std::env;
 
@@ -72,12 +73,28 @@ fn run(args: &[String]) -> Result<(), String> {
         "fiber-store-bench" => fiber_store_bench_command(args),
         "living-store-bench" => living_store_bench_command(args),
         "cubical-store-bench" => cubical_store_bench_command(args),
+        "topology-living-bench" => topology_living_bench_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
 }
 
 fn check_path(path: &str) -> Result<(), String> {
+    if crate::p74_topology_file_looks_like(path) {
+        return match crate::p74_topology_contract_report_file(path) {
+            Ok(report) => {
+                println!(
+                    "OK: p74_topology={} kind={} reopen={} guard={}",
+                    report.topology_name,
+                    report.topology_kind,
+                    report.reopen_equivalence_gate,
+                    report.guard_no_false_gain
+                );
+                Ok(())
+            }
+            Err(diagnostic) => Err(diagnostic.to_string()),
+        };
+    }
     if crate::p73_cubical_file_looks_like(path) {
         return match crate::p73_cubical_lifecycle_report_file(path) {
             Ok(report) => {
@@ -547,6 +564,17 @@ fn cubical_store_bench_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn topology_living_bench_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p74_topology_living_options(&args[1..])?;
+    let report = crate::p74_topology_living_bench(options.options, &options.export_dir)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p74_topology_living_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p74_topology_living_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -648,6 +676,13 @@ struct P72LivingStoreCliOptions {
 #[derive(Debug, Clone, PartialEq)]
 struct P73CubicalStoreCliOptions {
     options: P73CubicalStoreOptions,
+    export_dir: String,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P74TopologyLivingCliOptions {
+    options: P74TopologyLivingOptions,
     export_dir: String,
     format: OutputFormat,
 }
@@ -2636,6 +2671,282 @@ fn parse_p73_compare_p72(value: &str) -> Result<P73CompareP72, String> {
     })
 }
 
+fn parse_p74_topology_living_options(
+    args: &[String],
+) -> Result<P74TopologyLivingCliOptions, String> {
+    let mut corpora = None;
+    let mut topologies = None;
+    let mut target_source_bytes = None;
+    let mut cycles = None;
+    let mut queries = None;
+    let mut updates = None;
+    let mut deletes = None;
+    let mut compact = None;
+    let mut adaptive = None;
+    let mut locality = None;
+    let mut update_pressure = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--corpus" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --corpus"))?;
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corpus=") {
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 1;
+        } else if arg == "--topology" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --topology"))?;
+            topologies = Some(parse_p74_topologies(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--topology=") {
+            topologies = Some(parse_p74_topologies(value)?);
+            idx += 1;
+        } else if arg == "--target-source-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("topology-living-bench requires a value after --target-source-bytes")
+            })?;
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "topology-living-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--target-source-bytes=") {
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "topology-living-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--cycles" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --cycles"))?;
+            cycles = Some(parse_positive_usize(
+                value,
+                "topology-living-bench",
+                "--cycles",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cycles=") {
+            cycles = Some(parse_positive_usize(
+                value,
+                "topology-living-bench",
+                "--cycles",
+            )?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(
+                value,
+                "topology-living-bench",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "topology-living-bench",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--updates" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --updates"))?;
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "topology-living-bench",
+                "--updates",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--updates=") {
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "topology-living-bench",
+                "--updates",
+            )?);
+            idx += 1;
+        } else if arg == "--deletes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --deletes"))?;
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "topology-living-bench",
+                "--deletes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--deletes=") {
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "topology-living-bench",
+                "--deletes",
+            )?);
+            idx += 1;
+        } else if arg == "--compact" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --compact"))?;
+            compact = Some(parse_p74_compact_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--compact=") {
+            compact = Some(parse_p74_compact_value(value)?);
+            idx += 1;
+        } else if arg == "--adaptive" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --adaptive"))?;
+            adaptive = Some(parse_bool_value(
+                value,
+                "topology-living-bench",
+                "--adaptive",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--adaptive=") {
+            adaptive = Some(parse_bool_value(
+                value,
+                "topology-living-bench",
+                "--adaptive",
+            )?);
+            idx += 1;
+        } else if arg == "--locality" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --locality"))?;
+            locality = Some(parse_p74_locality(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--locality=") {
+            locality = Some(parse_p74_locality(value)?);
+            idx += 1;
+        } else if arg == "--update-pressure" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("topology-living-bench requires a value after --update-pressure")
+            })?;
+            update_pressure = Some(parse_p74_update_pressure(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--update-pressure=") {
+            update_pressure = Some(parse_p74_update_pressure(value)?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("topology-living-bench requires a value after --export-dir")
+            })?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("topology-living-bench requires a value after --format"))?;
+            format = Some(parse_format_value(value, "topology-living-bench")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "topology-living-bench")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "topology-living-bench received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P74TopologyLivingCliOptions {
+        options: P74TopologyLivingOptions {
+            corpora: corpora.ok_or_else(|| {
+                usage("topology-living-bench requires --corpus all|code|logs|json|csv|guard")
+            })?,
+            topologies: topologies.ok_or_else(|| {
+                usage(
+                    "topology-living-bench requires --topology all|linear|cubical|trie|graph|hypergraph|hierarchical",
+                )
+            })?,
+            target_source_bytes: target_source_bytes
+                .ok_or_else(|| usage("topology-living-bench requires --target-source-bytes N"))?,
+            cycles: cycles.ok_or_else(|| usage("topology-living-bench requires --cycles N"))?,
+            queries: queries.ok_or_else(|| usage("topology-living-bench requires --queries N"))?,
+            updates: updates.ok_or_else(|| usage("topology-living-bench requires --updates N"))?,
+            deletes: deletes.ok_or_else(|| usage("topology-living-bench requires --deletes N"))?,
+            compact: compact.ok_or_else(|| {
+                usage("topology-living-bench requires --compact off|threshold|aggressive|adaptive")
+            })?,
+            adaptive: adaptive
+                .ok_or_else(|| usage("topology-living-bench requires --adaptive on|off"))?,
+            locality: locality.ok_or_else(|| {
+                usage("topology-living-bench requires --locality clustered|random|mixed|hotspot")
+            })?,
+            update_pressure: update_pressure.ok_or_else(|| {
+                usage("topology-living-bench requires --update-pressure low|medium|high")
+            })?,
+        },
+        export_dir: export_dir
+            .ok_or_else(|| usage("topology-living-bench requires --export-dir <path>"))?,
+        format: format
+            .ok_or_else(|| usage("topology-living-bench requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p74_topologies(value: &str) -> Result<Vec<TopologyKind>, String> {
+    if value == "all" {
+        return Ok(crate::p74_all_topologies());
+    }
+    let mut topologies = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        let topology = TopologyKind::from_str(item).ok_or_else(|| {
+            usage(format!(
+                "topology-living-bench received unsupported topology '{}'; expected all|linear|cubical|trie|graph|hypergraph|hierarchical",
+                item
+            ))
+        })?;
+        topologies.push(topology);
+    }
+    if topologies.is_empty() {
+        return Err(usage("topology-living-bench requires non-empty --topology"));
+    }
+    Ok(topologies)
+}
+
+fn parse_p74_compact_value(value: &str) -> Result<P74CompactionPolicy, String> {
+    P74CompactionPolicy::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "topology-living-bench received unsupported compact policy '{}'; expected off|threshold|aggressive|adaptive",
+            value
+        ))
+    })
+}
+
+fn parse_p74_locality(value: &str) -> Result<P74LocalityProfile, String> {
+    P74LocalityProfile::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "topology-living-bench received unsupported locality '{}'; expected clustered|random|mixed|hotspot",
+            value
+        ))
+    })
+}
+
+fn parse_p74_update_pressure(value: &str) -> Result<P74UpdatePressure, String> {
+    P74UpdatePressure::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "topology-living-bench received unsupported update pressure '{}'; expected low|medium|high",
+            value
+        ))
+    })
+}
+
 fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
     match value {
         "true" | "on" | "yes" => Ok(true),
@@ -2983,6 +3294,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli fiber-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --runs N --queries N --export-dir <path> --format json|markdown",
         "  atlas-cli living-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --runs N --queries N --updates N --deletes N --compact off|threshold|aggressive --adaptive on|off [--reopen-check on|off] --export-dir <path> --format json|markdown",
         "  atlas-cli cubical-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --cycles N --queries N --updates N --deletes N --corruptions N --compact off|threshold|aggressive --adaptive on|off --compare-p72 baseline|off --export-dir <path> --format json|markdown",
+        "  atlas-cli topology-living-bench --corpus all|code|logs|json|csv|guard --topology all|linear|cubical|trie|graph|hypergraph|hierarchical --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --locality clustered|random|mixed|hotspot --update-pressure low|medium|high --export-dir <path> --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

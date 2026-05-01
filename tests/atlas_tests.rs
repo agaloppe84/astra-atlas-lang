@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 52] {
+fn invalid_cases() -> [InvalidCase; 60] {
     [
         InvalidCase {
             name: "bad_version",
@@ -428,6 +428,70 @@ fn invalid_cases() -> [InvalidCase; 52] {
             family: None,
             field: None,
             message: "unknown block 'p73_topology'",
+        },
+        InvalidCase {
+            name: "p74_unknown_topology_kind",
+            text: include_str!("../examples/invalid/p74_unknown_topology_kind.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p74_topology_probe'",
+        },
+        InvalidCase {
+            name: "p74_unbounded_adjacency",
+            text: include_str!("../examples/invalid/p74_unbounded_adjacency.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'fiber_topology'",
+        },
+        InvalidCase {
+            name: "p74_hidden_topology_storage",
+            text: include_str!("../examples/invalid/p74_hidden_topology_storage.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'fiber_topology'",
+        },
+        InvalidCase {
+            name: "p74_missing_reopen_gate",
+            text: include_str!("../examples/invalid/p74_missing_reopen_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'fiber_topology'",
+        },
+        InvalidCase {
+            name: "p74_cache_required_for_correctness",
+            text: include_str!("../examples/invalid/p74_cache_required_for_correctness.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'fiber_topology'",
+        },
+        InvalidCase {
+            name: "p74_bad_graph_edge_policy",
+            text: include_str!("../examples/invalid/p74_bad_graph_edge_policy.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'fiber_topology'",
+        },
+        InvalidCase {
+            name: "p74_bad_hyperedge_policy",
+            text: include_str!("../examples/invalid/p74_bad_hyperedge_policy.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'fiber_topology'",
+        },
+        InvalidCase {
+            name: "p74_missing_guard_gate",
+            text: include_str!("../examples/invalid/p74_missing_guard_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'fiber_topology'",
         },
     ]
 }

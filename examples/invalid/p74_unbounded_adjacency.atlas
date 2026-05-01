@@ -1,0 +1,4 @@
+atlas version=0.1;
+fiber_topology id=bad_topology kind=graph_adjacency adjacency=unbounded interface_policy=compact gluing=checked update_scope=local audit=selective edge_policy=local hyperedge_policy=bounded;
+fiber_schema id=code_fiber topology=graph_adjacency payload=generated_plus_residual index=local journal=compact audit=selective;
+living_topology_gates reopen_equivalence=true guard_no_false_gain=true hidden_topology_storage=false topology_overhead_counted=true ratio_living_reported=true runtime_cache_not_required_for_correctness=true;

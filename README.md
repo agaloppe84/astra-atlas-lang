@@ -393,6 +393,43 @@ Resultat local P73: standard ameliore `ratio_living` vs P72
 (`0.904937`) sous pression de gluing/journaux de faces. Decision:
 `RECALIBRATE_P73_CUBICAL_FIBER_TOPOLOGY`.
 
+## Validation P74 living fiber topology search
+
+P74 ajoute `topology-living-bench` pour comparer plusieurs topologies de fibres
+en mode living-memory avec environ 10 MiB de donnees sources deterministes:
+linear, cubical, trie prefix, graph adjacency, hypergraph tag et hierarchical
+tile.
+
+```bash
+cargo run -p atlas-cli -- topology-living-bench \
+  --corpus all \
+  --topology all \
+  --target-source-bytes 10485760 \
+  --cycles 10 \
+  --queries 10000 \
+  --updates 1000 \
+  --deletes 100 \
+  --compact threshold \
+  --adaptive on \
+  --locality mixed \
+  --update-pressure medium \
+  --export-dir artifacts/p74/topology_living_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p74/` et sont ignores par Git. Voir
+[docs/validation/astra-p74-living-fiber-topology-search.md](docs/validation/astra-p74-living-fiber-topology-search.md),
+l'audit de tests
+[docs/analysis/ASTRA-P74-test-stack-audit.md](docs/analysis/ASTRA-P74-test-stack-audit.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P74-living-fiber-topology-search-analysis.md](docs/analysis/ASTRA-P74-living-fiber-topology-search-analysis.md).
+
+Resultat local P74: `target_source_bytes=10485760`,
+`actual_source_bytes=10485760`, meilleur ratio observe avec
+`hierarchical_tile_fiber` sur sparse CSV (`ratio_living=4.742439` standard),
+mais les meilleurs choix restent dependants du corpus. Decision:
+`RECALIBRATE_P74_FIBER_TOPOLOGY_SEARCH`.
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

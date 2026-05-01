@@ -48,6 +48,17 @@ tests Rust locale. Les tests obsoletes, redondants ou trompeurs doivent etre
 supprimes, fusionnes ou recalibres avec justification. Les tests historiques qui
 protegent encore un invariant reel restent des non-regressions versionnees.
 
+## Living-memory decisions
+
+A partir de P74, les decisions R&D sur le ratio memoire virtuelle / memoire
+reelle doivent etre basees sur des campagnes living-memory significatives:
+environ 10 MiB de donnees sources locales, store living, open/read/query,
+update/delete/audit, compaction, close/reopen, equivalence de reopen, guard
+incompressible, cout filesystem mesure, `ratio_living`, `runtime_peak_bytes`,
+`cold_persisted_bytes` et retrieval utile. Les tests unitaires ou non-living
+restent autorises, mais seulement comme parser/typechecker, compatibilite et
+non-regression.
+
 ## Results LaTeX/PDF
 
 Le rapport Markdown d'analyse reste la trace vivante. Le `.tex` et le `.pdf`
