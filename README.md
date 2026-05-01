@@ -123,6 +123,31 @@ Les exports P64 vivent sous `artifacts/p64/` et restent ignores par Git. Voir
 et le rapport d'analyse
 [docs/analysis/ASTRA-P64-address-local-realish-ratio-analysis.md](docs/analysis/ASTRA-P64-address-local-realish-ratio-analysis.md).
 
+## Validation P65 acteurs locaux
+
+P65 ajoute `ratio-actors` pour tester des acteurs locaux deterministes a budget
+sur les workloads realish P64. Les acteurs ne sont pas une intelligence
+autonome: cache, index, journal, queue, audit et coordination sont tous comptes
+comme cout reel.
+
+```bash
+cargo run -p atlas-cli -- ratio-actors examples/p53_strict.atlas \
+  --workload all \
+  --actor-strategy all \
+  --mode standard \
+  --runs 30 \
+  --queries 1000 \
+  --neighborhood-radius 3 \
+  --budget-bytes 1048576 \
+  --export-dir artifacts/p65/actors_standard \
+  --format json
+```
+
+Les exports P65 vivent sous `artifacts/p65/` et restent ignores par Git. Voir
+[docs/validation/astra-p65-address-local-actor-runtime.md](docs/validation/astra-p65-address-local-actor-runtime.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P65-address-local-actor-runtime-analysis.md](docs/analysis/ASTRA-P65-address-local-actor-runtime-analysis.md).
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

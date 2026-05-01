@@ -7,7 +7,7 @@ use crate::{
     p63_campaign_set_summary_json_file, p63_campaign_summary_json_file, run_workload_file,
     validate_file, write_p63_campaign_exports, write_p64_campaign_exports, DiagnosticCode,
     P63ThresholdProfile, P64GenerationPolicy, P64RatioRealishOptions, P64WorkloadKind,
-    WorkloadMode,
+    P65ActorStrategy, P65RatioActorsOptions, WorkloadMode,
 };
 use std::env;
 
@@ -55,6 +55,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "ratio-campaign-summary" => ratio_campaign_summary_command(args),
         "ratio-campaign-set-summary" => ratio_campaign_set_summary_command(args),
         "ratio-realish" => ratio_realish_command(args),
+        "ratio-actors" => ratio_actors_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -317,6 +318,24 @@ fn ratio_realish_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn ratio_actors_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("ratio-actors requires a .atlas path"))?;
+    let options = parse_p65_options(&args[2..])?;
+    let report = crate::p65_ratio_actors_report_file(path, options.options)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    if let Some(export_dir) = &options.export_dir {
+        crate::write_p65_actor_campaign_exports(&report, export_dir)
+            .map_err(|diagnostic| diagnostic.to_string())?;
+    }
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p65_report_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p65_summary_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -348,6 +367,13 @@ struct CampaignSetOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct P64CliOptions {
     options: P64RatioRealishOptions,
+    export_dir: Option<String>,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct P65CliOptions {
+    options: P65RatioActorsOptions,
     export_dir: Option<String>,
     format: OutputFormat,
 }
@@ -777,6 +803,202 @@ fn parse_p64_policy_value(value: &str) -> Result<Option<P64GenerationPolicy>, St
     })
 }
 
+fn parse_p65_options(args: &[String]) -> Result<P65CliOptions, String> {
+    let mut workload = None;
+    let mut workload_all = false;
+    let mut actor_strategy = None;
+    let mut actor_strategy_all = false;
+    let mut mode = None;
+    let mut runs = None;
+    let mut queries = None;
+    let mut neighborhood_radius = None;
+    let mut budget_bytes = None;
+    let mut cache_enabled = true;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--workload" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors requires a value after --workload"))?;
+            let parsed = parse_p64_workload_value(value)?;
+            workload_all = parsed.is_none();
+            workload = parsed;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--workload=") {
+            let parsed = parse_p64_workload_value(value)?;
+            workload_all = parsed.is_none();
+            workload = parsed;
+            idx += 1;
+        } else if arg == "--actor-strategy" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors requires a value after --actor-strategy"))?;
+            let parsed = parse_p65_actor_strategy_value(value)?;
+            actor_strategy_all = parsed.is_none();
+            actor_strategy = parsed;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--actor-strategy=") {
+            let parsed = parse_p65_actor_strategy_value(value)?;
+            actor_strategy_all = parsed.is_none();
+            actor_strategy = parsed;
+            idx += 1;
+        } else if arg == "--mode" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors requires a value after --mode"))?;
+            mode = Some(parse_mode_value(value, "ratio-actors")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--mode=") {
+            mode = Some(parse_mode_value(value, "ratio-actors")?);
+            idx += 1;
+        } else if arg == "--runs" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors requires a value after --runs"))?;
+            runs = Some(parse_positive_usize(value, "ratio-actors", "--runs")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--runs=") {
+            runs = Some(parse_positive_usize(value, "ratio-actors", "--runs")?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(value, "ratio-actors", "--queries")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(value, "ratio-actors", "--queries")?);
+            idx += 1;
+        } else if arg == "--neighborhood-radius" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-actors requires a value after --neighborhood-radius")
+            })?;
+            neighborhood_radius = Some(parse_positive_usize(
+                value,
+                "ratio-actors",
+                "--neighborhood-radius",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--neighborhood-radius=") {
+            neighborhood_radius = Some(parse_positive_usize(
+                value,
+                "ratio-actors",
+                "--neighborhood-radius",
+            )?);
+            idx += 1;
+        } else if arg == "--budget-bytes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors requires a value after --budget-bytes"))?;
+            budget_bytes = Some(parse_positive_u64(value, "ratio-actors", "--budget-bytes")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--budget-bytes=") {
+            budget_bytes = Some(parse_positive_u64(value, "ratio-actors", "--budget-bytes")?);
+            idx += 1;
+        } else if arg == "--cache" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors requires a value after --cache"))?;
+            cache_enabled = parse_cache_value(value)?;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cache=") {
+            cache_enabled = parse_cache_value(value)?;
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors requires a value after --format"))?;
+            format = Some(parse_format_value(value, "ratio-actors")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "ratio-actors")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "ratio-actors received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    if !workload_all && workload.is_none() {
+        return Err(usage("ratio-actors requires --workload <name>|all"));
+    }
+    if !actor_strategy_all && actor_strategy.is_none() {
+        return Err(usage("ratio-actors requires --actor-strategy <name>|all"));
+    }
+
+    Ok(P65CliOptions {
+        options: P65RatioActorsOptions {
+            workload,
+            actor_strategy,
+            mode: mode
+                .ok_or_else(|| usage("ratio-actors requires --mode smoke|standard|ambitious"))?,
+            runs: runs.ok_or_else(|| usage("ratio-actors requires --runs N"))?,
+            queries: queries.ok_or_else(|| usage("ratio-actors requires --queries N"))?,
+            neighborhood_radius: neighborhood_radius
+                .ok_or_else(|| usage("ratio-actors requires --neighborhood-radius N"))?,
+            budget_bytes: budget_bytes
+                .ok_or_else(|| usage("ratio-actors requires --budget-bytes N"))?,
+            cache_enabled,
+        },
+        export_dir,
+        format: format.ok_or_else(|| usage("ratio-actors requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p65_actor_strategy_value(value: &str) -> Result<Option<P65ActorStrategy>, String> {
+    if value == "all" {
+        return Ok(None);
+    }
+    P65ActorStrategy::from_str(value).map(Some).ok_or_else(|| {
+        usage(format!(
+            "ratio-actors received unsupported actor strategy '{}'; expected no-actor|single-local|specialized-crud|over-agentic|all",
+            value
+        ))
+    })
+}
+
+fn parse_positive_u64(value: &str, command: &str, option: &str) -> Result<u64, String> {
+    let parsed = value.parse::<u64>().map_err(|_| {
+        usage(format!(
+            "{} received invalid {} '{}'",
+            command, option, value
+        ))
+    })?;
+    if parsed == 0 {
+        return Err(usage(format!(
+            "{} requires {} greater than zero",
+            command, option
+        )));
+    }
+    Ok(parsed)
+}
+
+fn parse_cache_value(value: &str) -> Result<bool, String> {
+    match value {
+        "on" => Ok(true),
+        "off" => Ok(false),
+        _ => Err(usage(format!(
+            "ratio-actors received unsupported cache value '{}'; expected on|off",
+            value
+        ))),
+    }
+}
+
 fn parse_positive_usize(value: &str, command: &str, option: &str) -> Result<usize, String> {
     let parsed = value.parse::<usize>().map_err(|_| {
         usage(format!(
@@ -810,6 +1032,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli ratio-campaign-summary <registry.json> --format json",
         "  atlas-cli ratio-campaign-set-summary <registry.json> --mode smoke|standard|ambitious --threshold-profile p63 --format json [--set-name <name>]",
         "  atlas-cli ratio-realish <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --policy full-materialization|global-indexed|address-local|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N [--export-dir <path>] --format json|markdown",
+        "  atlas-cli ratio-actors <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --actor-strategy no-actor|single-local|specialized-crud|over-agentic|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N --budget-bytes N [--cache on|off] [--export-dir <path>] --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }
