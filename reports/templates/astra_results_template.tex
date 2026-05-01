@@ -1,0 +1,72 @@
+\documentclass[a4paper,11pt]{article}
+
+% ASTRA Results template.
+% Compatible target: Tectonic first, then latexmk/pdflatex fallback.
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA Results},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+
+\newcommand{\AstraProject}{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\newcommand{\AstraDecision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+\newcommand{\AstraMetric}[2]{\texttt{\detokenize{#1}} & #2\\}
+
+\title{\textbf{ASTRA Results}\\Titre du rapport}
+\author{\AstraProject}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+R\'esum\'e court du rapport Results. Le rapport Markdown d'analyse reste la
+trace vivante; ce fichier \LaTeX{} est le livrable final fig\'e.
+\end{abstract}
+
+\section{Position}
+
+D\'ecrire la position de l'\'etape dans ASTRA.
+
+\section{R\'esultats}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+M\'etrique & Valeur\\
+\midrule
+\AstraMetric{metric_name}{0}
+\bottomrule
+\end{longtable}
+
+\section{D\'ecision}
+
+\AstraDecision{RECALIBRATE}
+
+\section{Limites}
+
+Lister les limites sans sur-revendication scientifique.
+
+\end{document}

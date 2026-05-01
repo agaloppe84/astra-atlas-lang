@@ -1,0 +1,222 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P63 Results -- Measured Ratio},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+
+\title{\textbf{ASTRA-P63 Results}\\Measured Ratio Campaign Layer}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P63-v6 du repo \Code{astra-atlas-lang}. La
+trace vivante reste le rapport Markdown d'analyse P63. Ce document
+\LaTeX{}/PDF est le livrable Results fig\'e pour la couche de campagnes
+mesur\'ees P63. Aucun r\'esultat nouveau n'est invent\'e ici.
+\end{abstract}
+
+\section{Position dans ASTRA}
+
+P63 appartient au chemin de calibration du ratio mesur\'e pour les
+Repr\'esentations Proc\'edurales Adressables. P61 a introduit le laboratoire
+virtuel avec un co\^ut proxy d\'eterministe. P62 a introduit \Code{ratio-real}
+avec mesures r\'eelles par \Code{std::time::Instant} et tailles de fichiers
+temporaires. P63 installe la couche durable de campagnes, de registres, de
+comparaisons et de synth\`eses locales.
+
+La question centrale reste:
+\[
+  R_{\mathrm{effective}} =
+  \frac{\text{espace virtuel effectif, adressable et auditable}}
+       {\text{co\^ut r\'eel pay\'e}}
+\]
+
+Le ratio d\'eclar\'e est affich\'e pour contexte, mais il ne pilote pas la
+d\'ecision scientifique.
+
+\section{Source et port\'ee}
+
+La source principale est:
+\begin{center}
+\url{docs/analysis/ASTRA-P63-measured-ratio-calibration-analysis.md}
+\end{center}
+
+Les campagnes P63-v6 ont \'et\'e ex\'ecut\'ees localement en mode
+\Code{ambitious}, avec trois campagnes de \Code{runs = 50}. Les artefacts
+g\'en\'er\'es restent sous \Code{artifacts/p63/} et ne sont pas destin\'es \`a
+\^etre committ\'es.
+
+\section{R\'esultats fig\'es P63-v6}
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+M\'etrique & Valeur\\
+\midrule
+\Code{campaign_count} & 3\\
+\Code{total_runs} & 150\\
+\Code{virtual_declared_units} & 34\,320\,000\\
+\Code{virtual_effective_units} & 2\,460\,000\\
+\Code{total_persisted_bytes} & 777\,971\\
+\Code{ratio_effective_per_byte} & 3.162072\\
+\Code{gain_vs_materialized} & 352.918039\\
+\Code{effective_gain_vs_materialized} & 25.296573\\
+\bottomrule
+\end{longtable}
+
+\section{Cha\^ine d'adressabilit\'e virtuelle}
+
+Les valeurs P63-v6 exposent explicitement la restriction progressive entre
+l'espace d\'eclar\'e et l'espace virtuel effectivement exploitable:
+
+\begin{longtable}{@{}lr@{}}
+\toprule
+Niveau & Unit\'es\\
+\midrule
+\Code{virtual_declared_units} & 34\,320\,000\\
+\Code{virtual_reachable_units} & 3\,534\,000\\
+\Code{virtual_readable_units} & 3\,054\,000\\
+\Code{virtual_updatable_units} & 2\,568\,000\\
+\Code{virtual_safe_units} & 2\,460\,000\\
+\Code{virtual_effective_units} & 2\,460\,000\\
+\bottomrule
+\end{longtable}
+
+\[
+34\,320\,000 \rightarrow 3\,534\,000 \rightarrow 3\,054\,000
+\rightarrow 2\,568\,000 \rightarrow 2\,460\,000 \rightarrow 2\,460\,000
+\]
+
+\section{Co\^ut r\'eel mesur\'e}
+
+Le co\^ut r\'eel pay\'e est mesur\'e par fichiers temporaires et metadata
+filesystem. La d\'ecomposition P63-v6 est:
+
+\begin{longtable}{@{}lr@{}}
+\toprule
+Composant & Octets\\
+\midrule
+\Code{payload_file_bytes} & 136\,624\\
+\Code{index_file_bytes} & 98\,378\\
+\Code{journal_file_bytes} & 344\,088\\
+\Code{manifest_file_bytes} & 169\\
+\Code{checksum_or_audit_bytes} & 82\\
+\Code{total_persisted_bytes} & 777\,971\\
+\bottomrule
+\end{longtable}
+
+\Code{metadata_bytes} n'est pas s\'epar\'ement mesur\'e dans P63-v6 et reste
+\Code{null} dans les rapports structur\'es.
+
+\section{Ratios}
+
+\begin{longtable}{@{}lr@{}}
+\toprule
+Ratio & Valeur\\
+\midrule
+\Code{ratio_declared_per_byte} & 44.114755\\
+\Code{ratio_reachable_per_byte} & 4.542586\\
+\Code{ratio_readable_per_byte} & 3.925596\\
+\Code{ratio_updatable_per_byte} & 3.300894\\
+\Code{ratio_safe_per_byte} & 3.162072\\
+\Code{ratio_effective_per_byte} & 3.162072\\
+\bottomrule
+\end{longtable}
+
+La m\'etrique centrale est \Code{ratio_effective_per_byte}. Le ratio d\'eclar\'e
+ne suffit pas, car il ne garantit ni reachability, ni readability, ni
+updatability, ni safety, ni auditabilit\'e.
+
+\section{Baseline de mat\'erialisation}
+
+La baseline locale suppose \Code{assumed_materialized_value_bytes = 8}. Elle
+sert de comparaison transparente, pas de claim scientifique externe.
+
+\begin{longtable}{@{}lr@{}}
+\toprule
+M\'etrique & Valeur\\
+\midrule
+\Code{assumed_materialized_value_bytes} & 8\\
+\Code{estimated_materialized_bytes} & 274\,560\,000\\
+\Code{gain_vs_materialized} & 352.918039\\
+\Code{effective_gain_vs_materialized} & 25.296573\\
+\bottomrule
+\end{longtable}
+
+\section{Vue compacte}
+
+\begin{verbatim}
+Virtual/real compression view
+[declared  : ##########] 34320000 units
+[effective : #---------] 2460000 units
+[real cost : ##--------] 777971 bytes
+
+ratio_effective_per_byte = 3.162072
+gain_vs_materialized     = 352.918039
+\end{verbatim}
+
+\section{D\'ecisions}
+
+\begin{longtable}{@{}ll@{}}
+\toprule
+Type & D\'ecision\\
+\midrule
+Repo / impl\'ementation & \Decision{VALIDER_IMPL_P63_MEASURED_RATIO_CAMPAIGN_LAYER}\\
+Scientifique & \Decision{RECALIBRATE_P63_THRESHOLDS}\\
+\bottomrule
+\end{longtable}
+
+La d\'ecision repo valide la couche d'impl\'ementation P63: exports de campagne,
+registry, comparaison, campaign set summary et vue virtual/real. La d\'ecision
+scientifique reste conservatrice, car \Code{allow_validate = false}, les
+workloads sont internes et d\'eterministes, et les campagnes restent
+mono-machine.
+
+\section{Limites}
+
+\begin{itemize}
+  \item Une seule machine locale.
+  \item Workloads internes d\'eterministes.
+  \item Timings d\'ependants de la machine.
+  \item Pas de datasets externes.
+  \item Pas de validation scientifique P63 finale.
+  \item Aucun timing goldenis\'e.
+  \item Les artefacts volumineux de campagne ne sont pas committ\'es.
+\end{itemize}
+
+\section{Recommandation}
+
+Le prochain rapport P64 devrait pr\'eparer un protocole multi-machine et des
+fixtures externes, sans activer de validation scientifique avant calibration des
+seuils et r\'eplication ind\'ependante.
+
+\end{document}

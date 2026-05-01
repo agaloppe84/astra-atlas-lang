@@ -98,3 +98,16 @@ Les campagnes standard comparables peuvent etre synthetisees avec
 P63-v6 expose aussi les metriques coeur `virtual_*_units`,
 `ratio_effective_per_byte` et `gain_vs_materialized` dans les rapports de
 campagne et les syntheses de campaign set.
+
+## ASTRA Results LaTeX/PDF
+
+Les rapports Results figes vivent sous [reports/](reports/). Le rapport
+Markdown d'analyse reste la trace vivante; le `.tex` et le `.pdf` Results sont
+generes localement apres validation. Tectonic est le compilateur prioritaire,
+avec fallback `latexmk` puis `pdflatex`:
+
+```bash
+bash scripts/build_report.sh reports/P63/RPA_ASTRA-P63-Results_measured-ratio_v1.0_2026-05-01.tex
+```
+
+La CI reste minimale et ne compile pas les rapports lourds.

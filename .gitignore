@@ -6,6 +6,15 @@ tmp/
 *.tmp
 *.out
 .DS_Store
+*.aux
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.blg
+*.bcf
+*.run.xml
 
 # If CARGO_TARGET_DIR is accidentally changed inside the repo
 .cargo-target/
