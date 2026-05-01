@@ -93,3 +93,5 @@ comparees avec `ratio-campaign-compare`.
 Prompt P63 ajoute aussi un registre local ignore par Git:
 `ratio-campaign-register <campaign_report.json> --registry artifacts/p63/registry.json --name <name> --format json`,
 puis `ratio-campaign-summary artifacts/p63/registry.json --format json`.
+Les campagnes standard comparables peuvent etre synthetisees avec
+`ratio-campaign-set-summary artifacts/p63/registry.json --mode standard --threshold-profile p63 --format json`.

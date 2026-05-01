@@ -4,8 +4,8 @@ use crate::{
     p61_virtual_ratio_report_json_file, p62_real_ratio_report_json_file_with_runs,
     p63_campaign_compare_json_files, p63_campaign_register_json_file,
     p63_campaign_report_file_with_runs, p63_campaign_report_to_json,
-    p63_campaign_summary_json_file, run_workload_file, validate_file, write_p63_campaign_exports,
-    DiagnosticCode, P63ThresholdProfile, WorkloadMode,
+    p63_campaign_set_summary_json_file, p63_campaign_summary_json_file, run_workload_file,
+    validate_file, write_p63_campaign_exports, DiagnosticCode, P63ThresholdProfile, WorkloadMode,
 };
 use std::env;
 
@@ -51,6 +51,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "ratio-campaign-compare" => ratio_campaign_compare_command(args),
         "ratio-campaign-register" => ratio_campaign_register_command(args),
         "ratio-campaign-summary" => ratio_campaign_summary_command(args),
+        "ratio-campaign-set-summary" => ratio_campaign_set_summary_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -279,6 +280,22 @@ fn ratio_campaign_summary_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn ratio_campaign_set_summary_command(args: &[String]) -> Result<(), String> {
+    let registry_path = args
+        .get(1)
+        .ok_or_else(|| usage("ratio-campaign-set-summary requires a registry path"))?;
+    let options = parse_campaign_set_options(&args[2..])?;
+    let json = p63_campaign_set_summary_json_file(
+        registry_path,
+        &options.set_name,
+        Some(options.mode),
+        Some(options.threshold_profile),
+    )
+    .map_err(|diagnostic| diagnostic.to_string())?;
+    println!("{}", json);
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -298,6 +315,13 @@ struct CommandOptions {
 struct CampaignRegisterOptions {
     registry: String,
     name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CampaignSetOptions {
+    set_name: String,
+    mode: WorkloadMode,
+    threshold_profile: P63ThresholdProfile,
 }
 
 fn parse_required_mode(args: &[String], command: &str) -> Result<WorkloadMode, String> {
@@ -501,6 +525,72 @@ fn parse_campaign_register_options(args: &[String]) -> Result<CampaignRegisterOp
     })
 }
 
+fn parse_campaign_set_options(args: &[String]) -> Result<CampaignSetOptions, String> {
+    let mut set_name = "standard_local_set".to_string();
+    let mut mode = None;
+    let mut threshold_profile = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--set-name" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-campaign-set-summary requires a value after --set-name")
+            })?;
+            set_name = value.to_string();
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--set-name=") {
+            set_name = value.to_string();
+            idx += 1;
+        } else if arg == "--mode" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-campaign-set-summary requires a value after --mode"))?;
+            mode = Some(parse_mode_value(value, "ratio-campaign-set-summary")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--mode=") {
+            mode = Some(parse_mode_value(value, "ratio-campaign-set-summary")?);
+            idx += 1;
+        } else if arg == "--threshold-profile" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-campaign-set-summary requires a value after --threshold-profile")
+            })?;
+            threshold_profile = Some(parse_threshold_profile_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--threshold-profile=") {
+            threshold_profile = Some(parse_threshold_profile_value(value)?);
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-campaign-set-summary requires a value after --format")
+            })?;
+            format = Some(parse_format_value(value, "ratio-campaign-set-summary")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "ratio-campaign-set-summary")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "ratio-campaign-set-summary received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    if format != Some(OutputFormat::Json) {
+        return Err(usage("ratio-campaign-set-summary requires --format json"));
+    }
+    Ok(CampaignSetOptions {
+        set_name,
+        mode: mode.ok_or_else(|| {
+            usage("ratio-campaign-set-summary requires --mode smoke|standard|ambitious")
+        })?,
+        threshold_profile: threshold_profile
+            .ok_or_else(|| usage("ratio-campaign-set-summary requires --threshold-profile p63"))?,
+    })
+}
+
 fn usage(detail: impl AsRef<str>) -> String {
     let commands = [
         "usage:",
@@ -516,6 +606,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli ratio-campaign-compare <campaign-a.json> <campaign-b.json> --format json",
         "  atlas-cli ratio-campaign-register <campaign.json> --registry <registry.json> --name <campaign-name> --format json",
         "  atlas-cli ratio-campaign-summary <registry.json> --format json",
+        "  atlas-cli ratio-campaign-set-summary <registry.json> --mode smoke|standard|ambitious --threshold-profile p63 --format json [--set-name <name>]",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

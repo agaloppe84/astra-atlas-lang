@@ -24,6 +24,14 @@ Prompt Codex 4 adds a compact local campaign registry, same-mode comparison
 status, non-validating candidate thresholds and registry summary output. It
 does not add external datasets and does not enable scientific validation.
 
+Prompt Codex 5 adds `p63_campaign_set_v1`, collects three local standard
+campaigns with `runs = 30`, summarizes the comparable long-campaign set, and
+keeps the decision conservative.
+
+P63 is now local-first strict: real local commands and this versioned analysis
+report are the primary validation surface. GitHub Actions remains a minimal
+external sanity check, not the scientific validation gate.
+
 ## 2. Position in ASTRA
 
 P63 belongs to the measured ratio path of ASTRA / Représentations Procedurales
@@ -57,7 +65,8 @@ Expected future additions:
 - P63 campaign export code: `PARTIAL_IMPLEMENTATION_CAMPAIGN_EXPORTS`.
 - P63 threshold profile: `p63`, conservative.
 - P63 campaign registry: `PARTIAL_IMPLEMENTATION_CAMPAIGN_REGISTRY`.
-- CI status for this P63 report step: `TODO_AFTER_CI`.
+- P63 campaign set: `PARTIAL_IMPLEMENTATION_CAMPAIGN_SET`.
+- Validation process: `LOCAL_FIRST_STRICT`.
 
 ## 5. Files changed
 
@@ -103,6 +112,18 @@ Prompt Codex 4 campaign registry step:
 Runtime semantics, grammar, invalid examples, P61/P62 goldens and timing
 goldens are not changed in this campaign registry step.
 
+Prompt Codex 5 campaign set step:
+
+- `src/p63.rs`
+- `src/cli.rs`
+- `tests/p63_tests.rs`
+- `docs/validation/astra-p63-measured-ratio-calibration.md`
+- `docs/analysis/ASTRA-P63-measured-ratio-calibration-analysis.md`
+- `README.md`
+
+Runtime semantics, grammar, invalid examples, P61/P62 goldens and timing
+goldens are not changed in this campaign set step.
+
 ## 6. Commands executed
 
 Executed locally for this P63 documentation/reporting step:
@@ -129,12 +150,20 @@ cargo run -p atlas-cli -- ratio-campaign-compare artifacts/p63/smoke/campaign_re
 cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/standard_001/campaign_report.json --registry artifacts/p63/registry.json --name standard_local_001 --format json
 cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/standard_002/campaign_report.json --registry artifacts/p63/registry.json --name standard_local_002 --format json
 cargo run -p atlas-cli -- ratio-campaign-summary artifacts/p63/registry.json --format json
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard --format json --runs 30 --export-dir artifacts/p63/standard_030_001 --threshold-profile p63
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard --format json --runs 30 --export-dir artifacts/p63/standard_030_002 --threshold-profile p63
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode standard --format json --runs 30 --export-dir artifacts/p63/standard_030_003 --threshold-profile p63
+cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/standard_030_001/campaign_report.json --registry artifacts/p63/registry.json --name standard_030_001 --format json
+cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/standard_030_002/campaign_report.json --registry artifacts/p63/registry.json --name standard_030_002 --format json
+cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/standard_030_003/campaign_report.json --registry artifacts/p63/registry.json --name standard_030_003 --format json
+cargo run -p atlas-cli -- ratio-campaign-set-summary artifacts/p63/registry.json --mode standard --threshold-profile p63 --format json
+cargo run -p atlas-cli -- ratio-campaign-compare artifacts/p63/standard_030_001/campaign_report.json artifacts/p63/standard_030_002/campaign_report.json --format json
 
 git status --short
 git diff --check
 ```
 
-Execution status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_4`.
+Execution status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_5`.
 
 ## 7. Validation results
 
@@ -225,9 +254,49 @@ Execution status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_4`.
   - `campaign_count = 2`
   - modes: `standard`
   - decision: `RECALIBRATE_P63_THRESHOLDS`
+- P63 long standard campaign 030_001: `PASS`
+  - command: `ratio-real ... --mode standard --runs 30 --export-dir artifacts/p63/standard_030_001 --threshold-profile p63`
+  - median `ratio_effective_per_byte = 6.421551`
+  - median `total_persisted_bytes = 383085`
+  - ratio/bytes stability: `STABLE`
+  - timing stability: `WARN`
+  - campaign stability: `WARN`
+  - decision: `RECALIBRATE_P63_THRESHOLDS`
+- P63 long standard campaign 030_002: `PASS`
+  - command: `ratio-real ... --mode standard --runs 30 --export-dir artifacts/p63/standard_030_002 --threshold-profile p63`
+  - median `ratio_effective_per_byte = 6.421551`
+  - median `total_persisted_bytes = 383085`
+  - ratio/bytes stability: `STABLE`
+  - timing stability: `WARN`
+  - campaign stability: `WARN`
+  - decision: `RECALIBRATE_P63_THRESHOLDS`
+- P63 long standard campaign 030_003: `PASS`
+  - command: `ratio-real ... --mode standard --runs 30 --export-dir artifacts/p63/standard_030_003 --threshold-profile p63`
+  - median `ratio_effective_per_byte = 6.421551`
+  - median `total_persisted_bytes = 383085`
+  - ratio/bytes stability: `STABLE`
+  - timing stability: `WARN`
+  - campaign stability: `WARN`
+  - decision: `RECALIBRATE_P63_THRESHOLDS`
+- P63 long standard campaign set: `PASS`
+  - `campaign_set_version = p63_campaign_set_v1`
+  - `campaign_count = 3`
+  - `total_runs = 90`
+  - `ratio_shift_percent_range = 0.000000`
+  - `bytes_shift_percent_range = 0.000000`
+  - `stable_campaign_count = 0`
+  - `warn_campaign_count = 3`
+  - `unstable_campaign_count = 0`
+  - `intra_mode_set_status = CAMPAIGN_SET_WARN`
+  - `set_decision = RECALIBRATE_P63_THRESHOLDS`
+- P63 long standard intra-mode comparison 030_001 vs 030_002: `PASS`
+  - `compatibility_status = SAME_MODE_COMPARABLE`
+  - `intra_mode_status = INTRA_MODE_STABLE`
+  - `ratio_shift_percent = 0.000000`
+  - `bytes_shift_percent = 0.000000`
+  - `comparison_decision = COMPARE_P63_SAME_MODE_INFORMATIONAL`
 - `git diff --check`: `PASS`
-- GitHub Actions before Prompt Codex 4: `PASS_USER_REPORTED`
-- GitHub Actions after Prompt Codex 4: `TODO_AFTER_CI`
+- GitHub Actions: minimal external sanity only; not a P63 scientific gate.
 
 The results validate the repository/documentation step, inherited P61/P62
 commands and the first compact P63 campaign export surface. They are not a
@@ -251,6 +320,7 @@ P63 local comparison table:
 | --- | --- | --- | ---: | ---: | --- |
 | `standard_001` vs `standard_002` | `SAME_MODE_COMPARABLE` | `INTRA_MODE_STABLE` | `0.000000` | `0.000000` | `COMPARE_P63_SAME_MODE_INFORMATIONAL` |
 | `smoke` vs `standard_001` | `DIFFERENT_MODES_INFORMATIONAL` | `INTRA_MODE_NOT_ENOUGH_DATA` | `94.816789` | `1069.189684` | `COMPARE_P63_DIFFERENT_MODES_INFORMATIONAL` |
+| `standard_030_001` vs `standard_030_002` | `SAME_MODE_COMPARABLE` | `INTRA_MODE_STABLE` | `0.000000` | `0.000000` | `COMPARE_P63_SAME_MODE_INFORMATIONAL` |
 
 ## 9. Campaign results
 
@@ -288,6 +358,19 @@ Prompt Codex 4 adds a compact campaign registry:
 - decision;
 - compact machine metadata;
 - git commit when available.
+
+Prompt Codex 5 adds a campaign set summary:
+
+- `campaign_set_version = p63_campaign_set_v1`;
+- `campaign_count`;
+- `total_runs`;
+- `median_ratio_values`;
+- `median_bytes_values`;
+- ratio and byte shift ranges;
+- stable/warn/unstable campaign counts;
+- `intra_mode_set_status`;
+- conservative `set_decision`;
+- `set_reasons`.
 
 Expected future campaign fields:
 
@@ -329,6 +412,11 @@ Prompt Codex 4 adds same-mode stability interpretation and candidate
 non-validating thresholds. These thresholds guide future analysis only; they do
 not enable validation.
 
+Prompt Codex 5 collects three comparable long standard campaigns with
+`runs = 30`. Ratio and byte ranges are stable at `0.000000%`, while timing
+variability keeps each campaign at `WARN`; the campaign set therefore returns
+`CAMPAIGN_SET_WARN`.
+
 ## 11. Threshold profile and decisions
 
 P63 decisions to document and later implement:
@@ -358,12 +446,14 @@ Prompt Codex 3 profile:
 - `require_realish_workloads = false`
 - `allow_validate = false`
 - `candidate_min_runs_for_future_validation = 30`
+- `candidate_min_campaigns_for_future_validation = 3`
 - `candidate_max_ratio_cv = 0.03`
 - `candidate_max_bytes_cv = 0.03`
 - `candidate_max_intra_mode_ratio_shift_percent = 5.0`
 - `candidate_max_intra_mode_bytes_shift_percent = 5.0`
+- `candidate_requires_multi_machine = true`
 
-Expected Prompt Codex 4 decision remains:
+Expected Prompt Codex 5 decision remains:
 
 ```text
 RECALIBRATE_P63_THRESHOLDS
@@ -404,10 +494,13 @@ Proposed gates:
 - `P63_G10_campaign_registry_available`
 - `P63_G11_same_mode_comparison_available`
 - `P63_G12_candidate_thresholds_non_validating`
+- `P63_G13_campaign_set_available`
+- `P63_G14_long_standard_campaigns_collected`
+- `P63_G15_local_first_report_updated`
 
-Gate status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_4_RECALIBRATE`.
+Gate status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_5_RECALIBRATE`.
 
-Prompt Codex 2 observed gate status:
+Observed gate status through Prompt Codex 5:
 
 - `P63_G0_p61_proxy_baseline_preserved`: `PASS`
 - `P63_G1_p62_measured_runs_available`: `PASS`
@@ -422,6 +515,9 @@ Prompt Codex 2 observed gate status:
 - `P63_G10_campaign_registry_available`: `PASS`
 - `P63_G11_same_mode_comparison_available`: `PASS`
 - `P63_G12_candidate_thresholds_non_validating`: `PASS`
+- `P63_G13_campaign_set_available`: `PASS`
+- `P63_G14_long_standard_campaigns_collected`: `PASS`
+- `P63_G15_local_first_report_updated`: `PASS`
 
 Final scientific gate status remains `RECALIBRATE_P63_THRESHOLDS`.
 
@@ -456,6 +552,21 @@ Observed Prompt Codex 4 local comparison:
 - `smoke` vs `standard_001`: `DIFFERENT_MODES_INFORMATIONAL`,
   `INTRA_MODE_NOT_ENOUGH_DATA`.
 
+Prompt Codex 5 adds:
+
+- `ratio-campaign-set-summary`;
+- `p63_campaign_set_v1`;
+- long standard campaign set synthesis for `runs >= 30` campaigns.
+
+Observed Prompt Codex 5 campaign set:
+
+- campaigns: `standard_030_001`, `standard_030_002`, `standard_030_003`;
+- total runs: `90`;
+- ratio shift range: `0.000000%`;
+- bytes shift range: `0.000000%`;
+- set status: `CAMPAIGN_SET_WARN`;
+- set decision: `RECALIBRATE_P63_THRESHOLDS`.
+
 ## 14. Scientific interpretation
 
 P63 should make the measured ratio analysis more scientific, but it must remain
@@ -464,6 +575,11 @@ measurement path; they do not prove external generality.
 
 No industrial latency claim, universal compression claim, or scientific
 validation claim is made by this initialized report.
+
+The Prompt Codex 5 long standard campaign set strengthens local evidence for
+the deterministic internal workload path. It does not establish external
+scientific validity because it is still one local machine, one internal fixture
+family and uncalibrated thresholds.
 
 ## 15. Limitations
 
@@ -474,6 +590,7 @@ validation claim is made by this initialized report.
 - Thresholds are not calibrated.
 - Timing values must not be goldenized.
 - Large raw logs must not be committed.
+- CI is intentionally minimal and is not the scientific validation surface.
 
 ## 16. Recommendation for P64
 
@@ -484,6 +601,14 @@ Recommended P64 direction after P63:
 - decide whether richer campaign exports are needed beyond the compact P63
   JSON/JSONL/CSV/Markdown surface;
 - prepare a Results-oriented synthesis only after repo reports are complete.
+
+Recommended Prompt Codex 6 direction:
+
+- add an explicit local campaign set comparison across independently collected
+  standard sets;
+- improve machine metadata completeness;
+- prepare multi-machine evidence capture without committing heavy artifacts;
+- keep `allow_validate = false` until thresholds and datasets are justified.
 
 ## 17. Reproducibility notes
 
@@ -507,7 +632,8 @@ essential.
 - Prompt Codex 2 local validation: `LOCAL_VALIDATION_PASS_FOR_PROMPT_2`.
 - Prompt Codex 3 calibration layer implementation:
   `LOCAL_VALIDATION_PASS_FOR_PROMPT_3`.
-- Prompt Codex 3 CI validation: `PASS_USER_REPORTED`.
 - Prompt Codex 4 campaign registry implementation:
   `LOCAL_VALIDATION_PASS_FOR_PROMPT_4`.
-- Prompt Codex 4 CI validation: `TODO_AFTER_CI`.
+- Prompt Codex 5 long standard campaign set implementation:
+  `LOCAL_VALIDATION_PASS_FOR_PROMPT_5`.
+- Process update: `LOCAL_FIRST_STRICT`; CI remains minimal external sanity only.

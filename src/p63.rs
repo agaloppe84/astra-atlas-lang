@@ -44,10 +44,12 @@ impl P63ThresholdProfile {
                 require_realish_workloads: false,
                 allow_validate: false,
                 candidate_min_runs_for_future_validation: 30,
+                candidate_min_campaigns_for_future_validation: 3,
                 candidate_max_ratio_cv: 0.03,
                 candidate_max_bytes_cv: 0.03,
                 candidate_max_intra_mode_ratio_shift_percent: 5.0,
                 candidate_max_intra_mode_bytes_shift_percent: 5.0,
+                candidate_requires_multi_machine: true,
             },
         }
     }
@@ -67,10 +69,12 @@ pub struct P63ThresholdProfileSpec {
     pub require_realish_workloads: bool,
     pub allow_validate: bool,
     pub candidate_min_runs_for_future_validation: usize,
+    pub candidate_min_campaigns_for_future_validation: usize,
     pub candidate_max_ratio_cv: f64,
     pub candidate_max_bytes_cv: f64,
     pub candidate_max_intra_mode_ratio_shift_percent: f64,
     pub candidate_max_intra_mode_bytes_shift_percent: f64,
+    pub candidate_requires_multi_machine: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -491,6 +495,36 @@ pub fn p63_campaign_summary_json_file(registry_path: &str) -> AtlasResult<String
     Ok(p63_campaign_registry_summary_json(&campaigns))
 }
 
+pub fn p63_campaign_set_summary_json_file(
+    registry_path: &str,
+    set_name: &str,
+    mode: Option<WorkloadMode>,
+    threshold_profile: Option<P63ThresholdProfile>,
+) -> AtlasResult<String> {
+    let registry = fs::read_to_string(registry_path)
+        .map_err(|err| io_diagnostic(format!("read registry {:?}: {}", registry_path, err)))?;
+    let mut campaigns = parse_registry_entries(&registry);
+    if let Some(mode) = mode {
+        campaigns.retain(|campaign| campaign.mode == mode.as_str());
+    }
+    if let Some(threshold_profile) = threshold_profile {
+        let spec = threshold_profile.spec();
+        campaigns.retain(|campaign| {
+            campaign.threshold_profile == spec.profile_id
+                || campaign.threshold_profile == threshold_profile.as_str()
+        });
+        if campaigns
+            .iter()
+            .any(|campaign| campaign.repeat_count >= spec.candidate_min_runs_for_future_validation)
+        {
+            campaigns.retain(|campaign| {
+                campaign.repeat_count >= spec.candidate_min_runs_for_future_validation
+            });
+        }
+    }
+    Ok(p63_campaign_set_summary_json(set_name, &campaigns))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct P63CampaignRegistryEntry {
     pub valid: bool,
@@ -711,6 +745,291 @@ fn p63_campaign_registry_summary_json(campaigns: &[P63CampaignRegistryEntry]) ->
     out
 }
 
+fn p63_campaign_set_summary_json(set_name: &str, campaigns: &[P63CampaignRegistryEntry]) -> String {
+    let profile = P63ThresholdProfile::P63.spec();
+    let modes = unique_strings(campaigns.iter().map(|campaign| campaign.mode.as_str()));
+    let profiles = unique_strings(
+        campaigns
+            .iter()
+            .map(|campaign| campaign.threshold_profile.as_str()),
+    );
+    let median_ratio_values: Vec<f64> = campaigns
+        .iter()
+        .map(|campaign| campaign.median_ratio_effective_per_byte)
+        .collect();
+    let median_bytes_values: Vec<f64> = campaigns
+        .iter()
+        .map(|campaign| campaign.median_total_persisted_bytes)
+        .collect();
+    let campaign_count = campaigns.len();
+    let total_runs = campaigns.iter().map(|campaign| campaign.repeat_count).sum();
+    let stable_campaign_count = campaigns
+        .iter()
+        .filter(|campaign| campaign.campaign_stability_status == "STABLE")
+        .count();
+    let warn_campaign_count = campaigns
+        .iter()
+        .filter(|campaign| campaign.campaign_stability_status == "WARN")
+        .count();
+    let unstable_campaign_count = campaigns
+        .iter()
+        .filter(|campaign| campaign.campaign_stability_status == "UNSTABLE")
+        .count();
+    let min_repeat_count = campaigns
+        .iter()
+        .map(|campaign| campaign.repeat_count)
+        .min()
+        .unwrap_or(0);
+    let ratio_shift_percent_range = percent_range(&median_ratio_values);
+    let bytes_shift_percent_range = percent_range(&median_bytes_values);
+    let intra_mode_set_status = campaign_set_status(
+        campaign_count,
+        min_repeat_count,
+        modes.len(),
+        profiles.len(),
+        unstable_campaign_count,
+        warn_campaign_count,
+        ratio_shift_percent_range,
+        bytes_shift_percent_range,
+        &profile,
+    );
+    let set_decision = campaign_set_decision(intra_mode_set_status);
+    let set_reasons = campaign_set_reasons(
+        intra_mode_set_status,
+        campaign_count,
+        total_runs,
+        min_repeat_count,
+        ratio_shift_percent_range,
+        bytes_shift_percent_range,
+        &profile,
+    );
+
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str(&json_string(
+        "campaign_set_version",
+        "p63_campaign_set_v1",
+        true,
+        2,
+    ));
+    out.push_str(&json_string("astra_step", "P63", true, 2));
+    out.push_str(&json_string("set_name", set_name, true, 2));
+    out.push_str(&json_string("mode", single_or_mixed(&modes), true, 2));
+    out.push_str(&json_string(
+        "threshold_profile",
+        single_or_mixed(&profiles),
+        true,
+        2,
+    ));
+    out.push_str(&json_usize("campaign_count", campaign_count, true, 2));
+    out.push_str(&json_usize("total_runs", total_runs, true, 2));
+    out.push_str("  \"campaigns\": [\n");
+    for (idx, campaign) in campaigns.iter().enumerate() {
+        out.push_str("    {\n");
+        out.push_str(&json_string(
+            "campaign_name",
+            &campaign.campaign_name,
+            true,
+            6,
+        ));
+        out.push_str(&json_string("mode", &campaign.mode, true, 6));
+        out.push_str(&json_string(
+            "threshold_profile",
+            &campaign.threshold_profile,
+            true,
+            6,
+        ));
+        out.push_str(&json_usize("repeat_count", campaign.repeat_count, true, 6));
+        out.push_str(&json_f64(
+            "median_ratio_effective_per_byte",
+            campaign.median_ratio_effective_per_byte,
+            true,
+            6,
+        ));
+        out.push_str(&json_f64(
+            "median_total_persisted_bytes",
+            campaign.median_total_persisted_bytes,
+            true,
+            6,
+        ));
+        out.push_str(&json_string(
+            "campaign_stability_status",
+            &campaign.campaign_stability_status,
+            true,
+            6,
+        ));
+        out.push_str(&json_string("decision", &campaign.decision, false, 6));
+        out.push_str(&format!("    }}{}\n", comma(idx, campaigns.len())));
+    }
+    out.push_str("  ],\n");
+    f64_array_json(
+        &mut out,
+        "median_ratio_values",
+        &median_ratio_values,
+        true,
+        2,
+    );
+    f64_array_json(
+        &mut out,
+        "median_bytes_values",
+        &median_bytes_values,
+        true,
+        2,
+    );
+    out.push_str(&json_f64(
+        "ratio_shift_percent_range",
+        ratio_shift_percent_range,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "bytes_shift_percent_range",
+        bytes_shift_percent_range,
+        true,
+        2,
+    ));
+    out.push_str(&json_usize(
+        "stable_campaign_count",
+        stable_campaign_count,
+        true,
+        2,
+    ));
+    out.push_str(&json_usize(
+        "warn_campaign_count",
+        warn_campaign_count,
+        true,
+        2,
+    ));
+    out.push_str(&json_usize(
+        "unstable_campaign_count",
+        unstable_campaign_count,
+        true,
+        2,
+    ));
+    out.push_str(&json_string(
+        "intra_mode_set_status",
+        intra_mode_set_status,
+        true,
+        2,
+    ));
+    out.push_str(&json_string("set_decision", set_decision, true, 2));
+    string_array_json(&mut out, "set_reasons", &set_reasons, false, 2);
+    out.push_str("}\n");
+    out
+}
+
+fn campaign_set_status(
+    campaign_count: usize,
+    min_repeat_count: usize,
+    mode_count: usize,
+    profile_count: usize,
+    unstable_campaign_count: usize,
+    warn_campaign_count: usize,
+    ratio_shift_percent_range: f64,
+    bytes_shift_percent_range: f64,
+    profile: &P63ThresholdProfileSpec,
+) -> &'static str {
+    if campaign_count == 0 {
+        return "CAMPAIGN_SET_NOT_ENOUGH_DATA";
+    }
+    if mode_count > 1 {
+        return "CAMPAIGN_SET_MIXED_MODES";
+    }
+    if profile_count > 1 {
+        return "CAMPAIGN_SET_MIXED_PROFILES";
+    }
+    if campaign_count < profile.candidate_min_campaigns_for_future_validation {
+        return "CAMPAIGN_SET_NOT_ENOUGH_DATA";
+    }
+    if min_repeat_count < profile.candidate_min_runs_for_future_validation {
+        return "CAMPAIGN_SET_NOT_ENOUGH_DATA";
+    }
+    if unstable_campaign_count > 0
+        || ratio_shift_percent_range > profile.candidate_max_intra_mode_ratio_shift_percent * 2.0
+        || bytes_shift_percent_range > profile.candidate_max_intra_mode_bytes_shift_percent * 2.0
+    {
+        return "CAMPAIGN_SET_UNSTABLE";
+    }
+    if warn_campaign_count > 0
+        || ratio_shift_percent_range > profile.candidate_max_intra_mode_ratio_shift_percent
+        || bytes_shift_percent_range > profile.candidate_max_intra_mode_bytes_shift_percent
+    {
+        return "CAMPAIGN_SET_WARN";
+    }
+    "CAMPAIGN_SET_STABLE"
+}
+
+fn campaign_set_decision(status: &str) -> &'static str {
+    match status {
+        "CAMPAIGN_SET_UNSTABLE" => "NO_GO_P63_MEASURED_RATIO_STABILITY",
+        "CAMPAIGN_SET_MIXED_MODES" | "CAMPAIGN_SET_MIXED_PROFILES" => "RECALIBRATE_P63_WORKLOADS",
+        _ => "RECALIBRATE_P63_THRESHOLDS",
+    }
+}
+
+fn campaign_set_reasons(
+    status: &str,
+    campaign_count: usize,
+    total_runs: usize,
+    min_repeat_count: usize,
+    ratio_shift_percent_range: f64,
+    bytes_shift_percent_range: f64,
+    profile: &P63ThresholdProfileSpec,
+) -> Vec<String> {
+    let mut reasons = vec![
+        "campaign set summaries are local-first analysis artifacts".to_string(),
+        format!("campaign_set_status: {}", status),
+        format!("campaign_count: {}", campaign_count),
+        format!("total_runs: {}", total_runs),
+        format!("min_repeat_count: {}", min_repeat_count),
+        format!(
+            "candidate_min_campaigns_for_future_validation: {}",
+            profile.candidate_min_campaigns_for_future_validation
+        ),
+        format!(
+            "candidate_min_runs_for_future_validation: {}",
+            profile.candidate_min_runs_for_future_validation
+        ),
+        format!(
+            "candidate_max_intra_mode_ratio_shift_percent: {:.6}",
+            profile.candidate_max_intra_mode_ratio_shift_percent
+        ),
+        format!(
+            "candidate_max_intra_mode_bytes_shift_percent: {:.6}",
+            profile.candidate_max_intra_mode_bytes_shift_percent
+        ),
+        format!(
+            "ratio_shift_percent_range: {:.6}",
+            ratio_shift_percent_range
+        ),
+        format!(
+            "bytes_shift_percent_range: {:.6}",
+            bytes_shift_percent_range
+        ),
+        format!(
+            "candidate_requires_multi_machine: {}",
+            profile.candidate_requires_multi_machine
+        ),
+        format!("allow_validate: {}", profile.allow_validate),
+    ];
+    reasons.push("scientific validation remains disabled in this prompt".to_string());
+    reasons
+}
+
+fn percent_range(values: &[f64]) -> f64 {
+    let finite: Vec<f64> = values
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .collect();
+    if finite.len() < 2 {
+        return 0.0;
+    }
+    let min = finite.iter().copied().reduce(f64::min).unwrap_or(0.0);
+    let max = finite.iter().copied().reduce(f64::max).unwrap_or(0.0);
+    percent_shift(min, max).abs()
+}
+
 fn parse_registry_entries(registry_json: &str) -> Vec<P63CampaignRegistryEntry> {
     let Some(campaigns_idx) = registry_json.find("\"campaigns\"") else {
         return Vec::new();
@@ -756,6 +1075,14 @@ fn unique_strings<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+fn single_or_mixed(values: &[String]) -> &str {
+    match values {
+        [] => "unknown",
+        [value] => value.as_str(),
+        _ => "mixed",
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1466,6 +1793,12 @@ fn threshold_profile_config_json(out: &mut String, profile: &P63ThresholdProfile
         true,
         4,
     ));
+    out.push_str(&json_usize(
+        "candidate_min_campaigns_for_future_validation",
+        profile.candidate_min_campaigns_for_future_validation,
+        true,
+        4,
+    ));
     out.push_str(&json_f64(
         "candidate_max_ratio_cv",
         profile.candidate_max_ratio_cv,
@@ -1487,6 +1820,12 @@ fn threshold_profile_config_json(out: &mut String, profile: &P63ThresholdProfile
     out.push_str(&json_f64(
         "candidate_max_intra_mode_bytes_shift_percent",
         profile.candidate_max_intra_mode_bytes_shift_percent,
+        true,
+        4,
+    ));
+    out.push_str(&json_bool(
+        "candidate_requires_multi_machine",
+        profile.candidate_requires_multi_machine,
         false,
         4,
     ));
@@ -1671,6 +2010,30 @@ fn string_array_json(
             "{}  \"{}\"{}\n",
             spaces,
             escape_json(value),
+            comma(idx, values.len())
+        ));
+    }
+    out.push_str(&format!(
+        "{}]{}\n",
+        spaces,
+        if trailing_comma { "," } else { "" }
+    ));
+}
+
+fn f64_array_json(
+    out: &mut String,
+    name: &str,
+    values: &[f64],
+    trailing_comma: bool,
+    indent: usize,
+) {
+    let spaces = " ".repeat(indent);
+    out.push_str(&format!("{}\"{}\": [\n", spaces, name));
+    for (idx, value) in values.iter().enumerate() {
+        out.push_str(&format!(
+            "{}  {:.6}{}\n",
+            spaces,
+            value,
             comma(idx, values.len())
         ));
     }

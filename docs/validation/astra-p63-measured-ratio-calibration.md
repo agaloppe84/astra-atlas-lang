@@ -65,10 +65,12 @@ The initial profile is intentionally conservative:
 - `require_realish_workloads = false`
 - `allow_validate = false`
 - `candidate_min_runs_for_future_validation = 30`
+- `candidate_min_campaigns_for_future_validation = 3`
 - `candidate_max_ratio_cv = 0.03`
 - `candidate_max_bytes_cv = 0.03`
 - `candidate_max_intra_mode_ratio_shift_percent = 5.0`
 - `candidate_max_intra_mode_bytes_shift_percent = 5.0`
+- `candidate_requires_multi_machine = true`
 
 `allow_validate = false` prevents
 `VALIDATE_P63_MEASURED_RATIO_CALIBRATION` even when an internal campaign looks
@@ -77,6 +79,10 @@ stable. This keeps P63 honest until thresholds and workloads are calibrated.
 The candidate thresholds are informational only. They document a future
 calibration direction, but they do not enable validation and do not override
 `allow_validate = false`.
+
+`runs >= 30`, at least three comparable standard campaigns and future
+multi-machine evidence are candidate requirements for later validation. They
+are deliberately non-validating in P63.
 
 ## Metrics To Add Later
 
@@ -270,6 +276,56 @@ The summary reports campaign count, modes, profiles, decisions, per-campaign
 median ratios, warnings and a conservative recommendation. It is intended for
 quick local analysis and for updating the durable Markdown analysis report, not
 for storing raw logs.
+
+## Campaign Set Summary
+
+Prompt Codex 5 adds a campaign set summary for comparable local campaigns:
+
+```bash
+cargo run -p atlas-cli -- ratio-campaign-set-summary \
+  artifacts/p63/registry.json \
+  --mode standard \
+  --threshold-profile p63 \
+  --format json
+```
+
+The summary uses `p63_campaign_set_v1` and reports:
+
+- `campaign_count`;
+- `total_runs`;
+- per-campaign median ratio and byte values;
+- ratio and byte shift ranges;
+- stable/warn/unstable campaign counts;
+- `intra_mode_set_status`;
+- conservative `set_decision`;
+- `set_reasons`.
+
+When the registry contains campaigns for the requested mode/profile with
+`runs >= candidate_min_runs_for_future_validation`, the set summary focuses on
+those long campaigns so older short exploratory campaigns do not dominate the
+Prompt 5 analysis.
+
+Campaign set statuses are:
+
+- `CAMPAIGN_SET_STABLE`
+- `CAMPAIGN_SET_WARN`
+- `CAMPAIGN_SET_UNSTABLE`
+- `CAMPAIGN_SET_NOT_ENOUGH_DATA`
+- `CAMPAIGN_SET_MIXED_MODES`
+- `CAMPAIGN_SET_MIXED_PROFILES`
+
+P63 keeps `allow_validate = false`; even a stable local campaign set remains a
+threshold calibration artifact, not scientific validation.
+
+## Local-First Process
+
+P63 analysis is local-first. The durable source for each step is the local
+command output summarized into
+`docs/analysis/ASTRA-P63-measured-ratio-calibration-analysis.md`.
+
+GitHub Actions should remain a minimal sanity check only. Heavy local campaigns,
+`runs 30` campaign sets and machine-dependent timing analysis should not be
+added to CI.
 
 ## Analysis Reports
 
