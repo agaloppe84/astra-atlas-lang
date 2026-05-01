@@ -9,3 +9,6 @@ tmp/
 
 # If CARGO_TARGET_DIR is accidentally changed inside the repo
 .cargo-target/
+
+# P63 local measured campaign exports
+artifacts/p63/

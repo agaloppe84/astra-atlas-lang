@@ -2,7 +2,8 @@ use crate::{
     bench_report_json, export_json_file, metrics_json_file, p57_report_json_file,
     p58_metrics_json_file, p58_report_json_file, p58_report_markdown_file,
     p61_virtual_ratio_report_json_file, p62_real_ratio_report_json_file_with_runs,
-    run_workload_file, validate_file, DiagnosticCode, WorkloadMode,
+    p63_campaign_report_file_with_runs, p63_campaign_report_to_json, run_workload_file,
+    validate_file, write_p63_campaign_exports, DiagnosticCode, P63ThresholdProfile, WorkloadMode,
 };
 use std::env;
 
@@ -212,8 +213,23 @@ fn ratio_real_command(args: &[String]) -> Result<(), String> {
         return Err(usage("ratio-real requires --format json"));
     }
     let runs = options.runs.unwrap_or(1);
-    let json = p62_real_ratio_report_json_file_with_runs(path, mode, runs)
-        .map_err(|diagnostic| diagnostic.to_string())?;
+    let json = if let Some(threshold_profile) = options.threshold_profile {
+        let report = p63_campaign_report_file_with_runs(path, mode, runs, threshold_profile)
+            .map_err(|diagnostic| diagnostic.to_string())?;
+        if let Some(export_dir) = &options.export_dir {
+            write_p63_campaign_exports(&report, export_dir)
+                .map_err(|diagnostic| diagnostic.to_string())?;
+        }
+        p63_campaign_report_to_json(&report)
+    } else {
+        if options.export_dir.is_some() {
+            return Err(usage(
+                "ratio-real --export-dir requires --threshold-profile p63",
+            ));
+        }
+        p62_real_ratio_report_json_file_with_runs(path, mode, runs)
+            .map_err(|diagnostic| diagnostic.to_string())?
+    };
     println!("{}", json);
     Ok(())
 }
@@ -224,11 +240,13 @@ enum OutputFormat {
     Markdown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct CommandOptions {
     mode: Option<WorkloadMode>,
     format: Option<OutputFormat>,
     runs: Option<usize>,
+    export_dir: Option<String>,
+    threshold_profile: Option<P63ThresholdProfile>,
 }
 
 fn parse_required_mode(args: &[String], command: &str) -> Result<WorkloadMode, String> {
@@ -254,6 +272,8 @@ fn parse_options(args: &[String], command: &str) -> Result<CommandOptions, Strin
     let mut mode = None;
     let mut format = None;
     let mut runs = None;
+    let mut export_dir = None;
+    let mut threshold_profile = None;
     let mut idx = 0;
 
     while idx < args.len() {
@@ -291,6 +311,36 @@ fn parse_options(args: &[String], command: &str) -> Result<CommandOptions, Strin
             }
             runs = Some(parse_runs_value(value)?);
             idx += 1;
+        } else if arg == "--export-dir" && command == "ratio-real" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-real requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            if command != "ratio-real" {
+                return Err(usage(format!(
+                    "{} received unsupported option '{}'",
+                    command, arg
+                )));
+            }
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--threshold-profile" && command == "ratio-real" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-real requires a value after --threshold-profile"))?;
+            threshold_profile = Some(parse_threshold_profile_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--threshold-profile=") {
+            if command != "ratio-real" {
+                return Err(usage(format!(
+                    "{} received unsupported option '{}'",
+                    command, arg
+                )));
+            }
+            threshold_profile = Some(parse_threshold_profile_value(value)?);
+            idx += 1;
         } else {
             return Err(usage(format!(
                 "{} received unsupported option '{}'",
@@ -299,7 +349,13 @@ fn parse_options(args: &[String], command: &str) -> Result<CommandOptions, Strin
         }
     }
 
-    Ok(CommandOptions { mode, format, runs })
+    Ok(CommandOptions {
+        mode,
+        format,
+        runs,
+        export_dir,
+        threshold_profile,
+    })
 }
 
 fn parse_mode_value(value: &str, command: &str) -> Result<WorkloadMode, String> {
@@ -332,6 +388,15 @@ fn parse_runs_value(value: &str) -> Result<usize, String> {
     Ok(runs)
 }
 
+fn parse_threshold_profile_value(value: &str) -> Result<P63ThresholdProfile, String> {
+    P63ThresholdProfile::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "ratio-real received unsupported threshold profile '{}'; expected p63",
+            value
+        ))
+    })
+}
+
 fn usage(detail: impl AsRef<str>) -> String {
     let commands = [
         "usage:",
@@ -343,7 +408,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli report <file.atlas> [--mode smoke|standard|ambitious] --format json|markdown",
         "  atlas-cli bench --mode smoke|standard|ambitious [--format json]",
         "  atlas-cli ratio <file.atlas> --mode smoke|standard|ambitious --format json",
-        "  atlas-cli ratio-real <file.atlas> --mode smoke|standard|ambitious --format json [--runs N]",
+        "  atlas-cli ratio-real <file.atlas> --mode smoke|standard|ambitious --format json [--runs N] [--export-dir <path> --threshold-profile p63]",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

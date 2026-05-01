@@ -20,6 +20,7 @@ cargo run -p atlas-cli -- bench --mode standard
 cargo run -p atlas-cli -- bench --mode standard --format json
 cargo run -p atlas-cli -- ratio examples/p53_strict.atlas --mode smoke --format json
 cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json --runs 3
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json --runs 5 --export-dir artifacts/p63/smoke --threshold-profile p63
 ```
 
 After `cargo build`, the same CLI is available as `atlas-cli`. The `atlasc`
@@ -74,3 +75,14 @@ proxy, sans revendication de validation scientifique. Voir
 P62 ajoute une commande locale `ratio-real --runs N` qui mesure des timings
 `Instant` et des tailles de fichiers temporaires reelles, sans golden de timing. Voir
 [docs/validation/astra-p62-real-measurement-plan.md](docs/validation/astra-p62-real-measurement-plan.md).
+
+## ASTRA-P63 analysis reports
+
+P63 prepare la calibration scientifique du ratio mesure. Les rapports d'analyse
+Markdown committables vivent dans [docs/analysis/](docs/analysis/) et doivent
+conserver les commandes, resultats resumes, decisions, limites et recommandations
+suivantes sans stocker de gros logs.
+
+Le premier export compact de campagne P63 s'active avec
+`ratio-real --threshold-profile p63 --export-dir <path>` et produit
+`campaign_report.json`, `runs.jsonl`, `runs.csv` et `summary.md` localement.
