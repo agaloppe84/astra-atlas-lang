@@ -46,6 +46,29 @@ Without `--threshold-profile p63`, `ratio-real` keeps the P62 JSON shape. With
 `--threshold-profile p63`, stdout becomes a P63 campaign report and
 `--export-dir` writes compact analysis files.
 
+`p63` is an alias for the versioned threshold profile
+`p63_conservative_v1`.
+
+## Threshold Profiles
+
+The initial profile is intentionally conservative:
+
+- `profile_id = p63_conservative_v1`
+- `alias = p63`
+- `min_runs_required = 10`
+- `max_ratio_cv = 0.05`
+- `max_bytes_cv = 0.05`
+- `max_timing_cv = 0.50`
+- `min_median_ratio_effective_per_byte = null`
+- `require_machine_metadata = true`
+- `require_campaign_exports = true`
+- `require_realish_workloads = false`
+- `allow_validate = false`
+
+`allow_validate = false` prevents
+`VALIDATE_P63_MEASURED_RATIO_CALIBRATION` even when an internal campaign looks
+stable. This keeps P63 honest until thresholds and workloads are calibrated.
+
 ## Metrics To Add Later
 
 Future P63 work should consider:
@@ -122,6 +145,27 @@ The first metrics covered are:
 Exact timing goldens are forbidden because measured timings vary by machine and
 run.
 
+## Stability Status
+
+Campaign reports expose:
+
+- `ratio_stability_status`;
+- `bytes_stability_status`;
+- `timing_stability_status`;
+- `campaign_stability_status`;
+- `stability_reasons`.
+
+Allowed statuses:
+
+- `STABLE`
+- `WARN`
+- `UNSTABLE`
+- `NOT_ENOUGH_RUNS`
+- `NOT_AVAILABLE`
+
+`repeat_count < min_runs_required` yields `NOT_ENOUGH_RUNS`. Timing stability
+is evaluated softly because timings are machine-dependent.
+
 ## P63 Decisions
 
 P63 decision vocabulary:
@@ -141,6 +185,22 @@ RECALIBRATE_P63_THRESHOLDS
 Validation requires calibrated thresholds, stable campaign exports, sufficient
 machine metadata and clear workload scope. This prompt does not return
 `VALIDATE_P63_MEASURED_RATIO_CALIBRATION`.
+
+## Campaign Comparison
+
+Prompt Codex 3 adds a lightweight comparison command:
+
+```bash
+cargo run -p atlas-cli -- ratio-campaign-compare \
+  artifacts/p63/smoke/campaign_report.json \
+  artifacts/p63/standard/campaign_report.json \
+  --format json
+```
+
+The comparison reports median ratio and byte shifts, profile compatibility,
+mode compatibility, stability summaries and an informational comparison
+decision. Different modes are reported as `DIFFERENT_MODES`; deltas are still
+emitted, but they are not regression claims.
 
 ## Analysis Reports
 

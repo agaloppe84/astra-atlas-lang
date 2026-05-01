@@ -2,8 +2,9 @@ use crate::{
     bench_report_json, export_json_file, metrics_json_file, p57_report_json_file,
     p58_metrics_json_file, p58_report_json_file, p58_report_markdown_file,
     p61_virtual_ratio_report_json_file, p62_real_ratio_report_json_file_with_runs,
-    p63_campaign_report_file_with_runs, p63_campaign_report_to_json, run_workload_file,
-    validate_file, write_p63_campaign_exports, DiagnosticCode, P63ThresholdProfile, WorkloadMode,
+    p63_campaign_compare_json_files, p63_campaign_report_file_with_runs,
+    p63_campaign_report_to_json, run_workload_file, validate_file, write_p63_campaign_exports,
+    DiagnosticCode, P63ThresholdProfile, WorkloadMode,
 };
 use std::env;
 
@@ -46,6 +47,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "bench" => bench_command(args),
         "ratio" => ratio_command(args),
         "ratio-real" => ratio_real_command(args),
+        "ratio-campaign-compare" => ratio_campaign_compare_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -234,6 +236,22 @@ fn ratio_real_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn ratio_campaign_compare_command(args: &[String]) -> Result<(), String> {
+    let path_a = args
+        .get(1)
+        .ok_or_else(|| usage("ratio-campaign-compare requires two campaign report paths"))?;
+    let path_b = args
+        .get(2)
+        .ok_or_else(|| usage("ratio-campaign-compare requires two campaign report paths"))?;
+    if !has_json_format(&args[3..]) {
+        return Err(usage("ratio-campaign-compare requires --format json"));
+    }
+    let json = p63_campaign_compare_json_files(path_a, path_b)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    println!("{}", json);
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -391,7 +409,7 @@ fn parse_runs_value(value: &str) -> Result<usize, String> {
 fn parse_threshold_profile_value(value: &str) -> Result<P63ThresholdProfile, String> {
     P63ThresholdProfile::from_str(value).ok_or_else(|| {
         usage(format!(
-            "ratio-real received unsupported threshold profile '{}'; expected p63",
+            "ratio-real received unsupported threshold profile '{}'; expected p63|p63_conservative_v1",
             value
         ))
     })
@@ -409,6 +427,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli bench --mode smoke|standard|ambitious [--format json]",
         "  atlas-cli ratio <file.atlas> --mode smoke|standard|ambitious --format json",
         "  atlas-cli ratio-real <file.atlas> --mode smoke|standard|ambitious --format json [--runs N] [--export-dir <path> --threshold-profile p63]",
+        "  atlas-cli ratio-campaign-compare <campaign-a.json> <campaign-b.json> --format json",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

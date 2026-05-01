@@ -23,8 +23,62 @@ impl P63ThresholdProfile {
 
     pub fn from_str(value: &str) -> Option<Self> {
         match value {
-            "p63" => Some(P63ThresholdProfile::P63),
+            "p63" | "p63_conservative_v1" => Some(P63ThresholdProfile::P63),
             _ => None,
+        }
+    }
+
+    pub fn spec(self) -> P63ThresholdProfileSpec {
+        match self {
+            P63ThresholdProfile::P63 => P63ThresholdProfileSpec {
+                profile_id: "p63_conservative_v1",
+                alias: Some("p63"),
+                min_runs_required: 10,
+                max_ratio_cv: 0.05,
+                max_bytes_cv: 0.05,
+                max_timing_cv: Some(0.50),
+                min_median_ratio_effective_per_byte: None,
+                require_machine_metadata: true,
+                require_campaign_exports: true,
+                require_realish_workloads: false,
+                allow_validate: false,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct P63ThresholdProfileSpec {
+    pub profile_id: &'static str,
+    pub alias: Option<&'static str>,
+    pub min_runs_required: usize,
+    pub max_ratio_cv: f64,
+    pub max_bytes_cv: f64,
+    pub max_timing_cv: Option<f64>,
+    pub min_median_ratio_effective_per_byte: Option<f64>,
+    pub require_machine_metadata: bool,
+    pub require_campaign_exports: bool,
+    pub require_realish_workloads: bool,
+    pub allow_validate: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum P63StabilityStatus {
+    Stable,
+    Warn,
+    Unstable,
+    NotEnoughRuns,
+    NotAvailable,
+}
+
+impl P63StabilityStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            P63StabilityStatus::Stable => "STABLE",
+            P63StabilityStatus::Warn => "WARN",
+            P63StabilityStatus::Unstable => "UNSTABLE",
+            P63StabilityStatus::NotEnoughRuns => "NOT_ENOUGH_RUNS",
+            P63StabilityStatus::NotAvailable => "NOT_AVAILABLE",
         }
     }
 }
@@ -97,14 +151,30 @@ pub struct P63CampaignReport {
     pub cost_model: String,
     pub measurement_kind: String,
     pub threshold_profile: String,
+    pub threshold_profile_resolved: String,
+    pub threshold_profile_config: P63ThresholdProfileSpec,
     pub repeat_count: usize,
     pub operation_count: usize,
     pub machine_metadata: P63MachineMetadata,
     pub summary: P63CampaignSummary,
+    pub ratio_stability_status: P63StabilityStatus,
+    pub bytes_stability_status: P63StabilityStatus,
+    pub timing_stability_status: P63StabilityStatus,
+    pub campaign_stability_status: P63StabilityStatus,
+    pub stability_reasons: Vec<String>,
     pub runs: Vec<P62MeasuredRun>,
     pub decision: P63Decision,
     pub decision_reasons: Vec<String>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct P63StabilityEvaluation {
+    ratio: P63StabilityStatus,
+    bytes: P63StabilityStatus,
+    timing: P63StabilityStatus,
+    campaign: P63StabilityStatus,
+    reasons: Vec<String>,
 }
 
 pub fn p63_campaign_report_file_with_runs(
@@ -125,9 +195,12 @@ impl P63CampaignReport {
         measured: P62RealRatioReport,
         threshold_profile: P63ThresholdProfile,
     ) -> Self {
+        let threshold_profile_config = threshold_profile.spec();
         let summary = P63CampaignSummary::from_runs(&measured.runs, measured.operation_count);
-        let decision = p63_decision(&summary, &measured);
-        let decision_reasons = p63_decision_reasons(decision, &summary);
+        let stability = p63_stability(&summary, &threshold_profile_config);
+        let decision = p63_decision(&summary, &measured, &threshold_profile_config, &stability);
+        let decision_reasons =
+            p63_decision_reasons(decision, &summary, &threshold_profile_config, &stability);
         Self {
             campaign_id: format!("p63-{}", measured.measurement_id),
             measurement_id: measured.measurement_id,
@@ -137,10 +210,17 @@ impl P63CampaignReport {
             cost_model: measured.cost_model,
             measurement_kind: measured.measurement_kind,
             threshold_profile: threshold_profile.as_str().to_string(),
+            threshold_profile_resolved: threshold_profile_config.profile_id.to_string(),
+            threshold_profile_config,
             repeat_count: measured.repeat_count,
             operation_count: measured.operation_count,
             machine_metadata: P63MachineMetadata::collect(),
             summary,
+            ratio_stability_status: stability.ratio,
+            bytes_stability_status: stability.bytes,
+            timing_stability_status: stability.timing,
+            campaign_stability_status: stability.campaign,
+            stability_reasons: stability.reasons,
             runs: measured.runs,
             decision,
             decision_reasons,
@@ -245,6 +325,219 @@ pub fn write_p63_campaign_exports(
     Ok(())
 }
 
+pub fn p63_campaign_compare_json_files(path_a: &str, path_b: &str) -> AtlasResult<String> {
+    let report_a = fs::read_to_string(path_a)
+        .map_err(|err| io_diagnostic(format!("read campaign A {:?}: {}", path_a, err)))?;
+    let report_b = fs::read_to_string(path_b)
+        .map_err(|err| io_diagnostic(format!("read campaign B {:?}: {}", path_b, err)))?;
+    Ok(p63_campaign_compare_json(
+        path_a, &report_a, path_b, &report_b,
+    ))
+}
+
+pub fn p63_campaign_compare_json(
+    path_a: &str,
+    report_a: &str,
+    path_b: &str,
+    report_b: &str,
+) -> String {
+    let parsed_a = ParsedCampaign::from_json(path_a, report_a);
+    let parsed_b = ParsedCampaign::from_json(path_b, report_b);
+    let compatibility_status = compatibility_status(&parsed_a, &parsed_b);
+    let ratio_shift = parsed_b.median_ratio - parsed_a.median_ratio;
+    let ratio_shift_percent = percent_shift(parsed_a.median_ratio, parsed_b.median_ratio);
+    let bytes_shift = parsed_b.median_bytes - parsed_a.median_bytes;
+    let bytes_shift_percent = percent_shift(parsed_a.median_bytes, parsed_b.median_bytes);
+    let interpretation = comparison_interpretation(compatibility_status);
+    let comparison_decision = comparison_decision(compatibility_status);
+
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str(&json_string("campaign_a", &parsed_a.campaign_id, true, 2));
+    out.push_str(&json_string("campaign_b", &parsed_b.campaign_id, true, 2));
+    out.push_str(&json_string("mode_a", &parsed_a.mode, true, 2));
+    out.push_str(&json_string("mode_b", &parsed_b.mode, true, 2));
+    out.push_str(&json_string(
+        "threshold_profile_a",
+        &parsed_a.threshold_profile,
+        true,
+        2,
+    ));
+    out.push_str(&json_string(
+        "threshold_profile_b",
+        &parsed_b.threshold_profile,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64("median_ratio_a", parsed_a.median_ratio, true, 2));
+    out.push_str(&json_f64("median_ratio_b", parsed_b.median_ratio, true, 2));
+    out.push_str(&json_f64("ratio_shift", ratio_shift, true, 2));
+    out.push_str(&json_f64(
+        "ratio_shift_percent",
+        ratio_shift_percent,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64("median_bytes_a", parsed_a.median_bytes, true, 2));
+    out.push_str(&json_f64("median_bytes_b", parsed_b.median_bytes, true, 2));
+    out.push_str(&json_f64("bytes_shift", bytes_shift, true, 2));
+    out.push_str(&json_f64(
+        "bytes_shift_percent",
+        bytes_shift_percent,
+        true,
+        2,
+    ));
+    out.push_str(&json_string("decision_a", &parsed_a.decision, true, 2));
+    out.push_str(&json_string("decision_b", &parsed_b.decision, true, 2));
+    out.push_str(&json_string("stability_a", &parsed_a.stability, true, 2));
+    out.push_str(&json_string("stability_b", &parsed_b.stability, true, 2));
+    out.push_str(&json_string(
+        "compatibility_status",
+        compatibility_status.as_str(),
+        true,
+        2,
+    ));
+    out.push_str(&json_string("interpretation", interpretation, true, 2));
+    out.push_str(&json_string(
+        "comparison_decision",
+        comparison_decision,
+        false,
+        2,
+    ));
+    out.push_str("}\n");
+    out
+}
+
+#[derive(Debug, Clone)]
+struct ParsedCampaign {
+    valid: bool,
+    campaign_id: String,
+    mode: String,
+    threshold_profile: String,
+    median_ratio: f64,
+    median_bytes: f64,
+    decision: String,
+    stability: String,
+}
+
+impl ParsedCampaign {
+    fn from_json(path: &str, json: &str) -> Self {
+        let threshold_profile = extract_json_string(json, "threshold_profile_resolved")
+            .or_else(|| extract_json_string(json, "threshold_profile"));
+        let parsed = Self {
+            valid: true,
+            campaign_id: extract_json_string(json, "campaign_id").unwrap_or_default(),
+            mode: extract_json_string(json, "mode").unwrap_or_default(),
+            threshold_profile: threshold_profile.unwrap_or_default(),
+            median_ratio: extract_metric_median(json, "ratio_effective_per_byte").unwrap_or(0.0),
+            median_bytes: extract_metric_median(json, "total_persisted_bytes").unwrap_or(0.0),
+            decision: extract_json_string(json, "decision").unwrap_or_default(),
+            stability: extract_json_string(json, "campaign_stability_status").unwrap_or_default(),
+        };
+        if parsed.campaign_id.is_empty()
+            || parsed.mode.is_empty()
+            || parsed.threshold_profile.is_empty()
+            || parsed.decision.is_empty()
+            || parsed.stability.is_empty()
+        {
+            return Self {
+                valid: false,
+                campaign_id: path.to_string(),
+                mode: "unknown".to_string(),
+                threshold_profile: "unknown".to_string(),
+                median_ratio: 0.0,
+                median_bytes: 0.0,
+                decision: "unknown".to_string(),
+                stability: "unknown".to_string(),
+            };
+        }
+        parsed
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum P63CampaignCompatibilityStatus {
+    Comparable,
+    DifferentModes,
+    IncompatibleProfiles,
+    MissingFields,
+    InvalidReport,
+}
+
+impl P63CampaignCompatibilityStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            P63CampaignCompatibilityStatus::Comparable => "COMPARABLE",
+            P63CampaignCompatibilityStatus::DifferentModes => "DIFFERENT_MODES",
+            P63CampaignCompatibilityStatus::IncompatibleProfiles => "INCOMPATIBLE_PROFILES",
+            P63CampaignCompatibilityStatus::MissingFields => "MISSING_FIELDS",
+            P63CampaignCompatibilityStatus::InvalidReport => "INVALID_REPORT",
+        }
+    }
+}
+
+fn compatibility_status(a: &ParsedCampaign, b: &ParsedCampaign) -> P63CampaignCompatibilityStatus {
+    if !a.valid || !b.valid {
+        return P63CampaignCompatibilityStatus::InvalidReport;
+    }
+    if a.median_ratio == 0.0
+        || b.median_ratio == 0.0
+        || a.median_bytes == 0.0
+        || b.median_bytes == 0.0
+    {
+        return P63CampaignCompatibilityStatus::MissingFields;
+    }
+    if a.threshold_profile != b.threshold_profile {
+        return P63CampaignCompatibilityStatus::IncompatibleProfiles;
+    }
+    if a.mode != b.mode {
+        return P63CampaignCompatibilityStatus::DifferentModes;
+    }
+    P63CampaignCompatibilityStatus::Comparable
+}
+
+fn comparison_interpretation(status: P63CampaignCompatibilityStatus) -> &'static str {
+    match status {
+        P63CampaignCompatibilityStatus::Comparable => {
+            "campaigns share mode and threshold profile; deltas are directly comparable"
+        }
+        P63CampaignCompatibilityStatus::DifferentModes => {
+            "campaigns use different modes; deltas are informational and not a regression claim"
+        }
+        P63CampaignCompatibilityStatus::IncompatibleProfiles => {
+            "campaigns use different threshold profiles; compare only after recalibration"
+        }
+        P63CampaignCompatibilityStatus::MissingFields => {
+            "one campaign is missing required numeric fields"
+        }
+        P63CampaignCompatibilityStatus::InvalidReport => {
+            "one input is not a valid P63 campaign report"
+        }
+    }
+}
+
+fn comparison_decision(status: P63CampaignCompatibilityStatus) -> &'static str {
+    match status {
+        P63CampaignCompatibilityStatus::Comparable => "COMPARE_P63_CAMPAIGNS_INFORMATIONAL",
+        P63CampaignCompatibilityStatus::DifferentModes => {
+            "COMPARE_P63_DIFFERENT_MODES_INFORMATIONAL"
+        }
+        P63CampaignCompatibilityStatus::IncompatibleProfiles => {
+            "RECALIBRATE_P63_COMPARISON_PROFILES"
+        }
+        P63CampaignCompatibilityStatus::MissingFields => "NO_GO_P63_COMPARISON_MISSING_FIELDS",
+        P63CampaignCompatibilityStatus::InvalidReport => "NO_GO_P63_COMPARISON_INVALID_REPORT",
+    }
+}
+
+fn percent_shift(a: f64, b: f64) -> f64 {
+    if a == 0.0 {
+        0.0
+    } else {
+        ((b - a) / a) * 100.0
+    }
+}
+
 pub fn p63_campaign_report_to_json(report: &P63CampaignReport) -> String {
     let mut out = String::new();
     out.push_str("{\n");
@@ -271,6 +564,13 @@ pub fn p63_campaign_report_to_json(report: &P63CampaignReport) -> String {
         true,
         2,
     ));
+    out.push_str(&json_string(
+        "threshold_profile_resolved",
+        &report.threshold_profile_resolved,
+        true,
+        2,
+    ));
+    threshold_profile_config_json(&mut out, &report.threshold_profile_config);
     out.push_str(&json_usize("repeat_count", report.repeat_count, true, 2));
     out.push_str(&json_usize(
         "operation_count",
@@ -280,6 +580,37 @@ pub fn p63_campaign_report_to_json(report: &P63CampaignReport) -> String {
     ));
     machine_metadata_json(&mut out, &report.machine_metadata);
     campaign_summary_json(&mut out, &report.summary);
+    out.push_str(&json_string(
+        "ratio_stability_status",
+        report.ratio_stability_status.as_str(),
+        true,
+        2,
+    ));
+    out.push_str(&json_string(
+        "bytes_stability_status",
+        report.bytes_stability_status.as_str(),
+        true,
+        2,
+    ));
+    out.push_str(&json_string(
+        "timing_stability_status",
+        report.timing_stability_status.as_str(),
+        true,
+        2,
+    ));
+    out.push_str(&json_string(
+        "campaign_stability_status",
+        report.campaign_stability_status.as_str(),
+        true,
+        2,
+    ));
+    string_array_json(
+        &mut out,
+        "stability_reasons",
+        &report.stability_reasons,
+        true,
+        2,
+    );
     runs_json(&mut out, &report.runs);
     out.push_str(&json_string("decision", report.decision.as_str(), true, 2));
     string_array_json(
@@ -297,7 +628,7 @@ pub fn p63_campaign_report_to_json(report: &P63CampaignReport) -> String {
 fn p63_runs_jsonl(report: &P63CampaignReport) -> String {
     let mut out = String::new();
     for run in &report.runs {
-        out.push_str(&run_jsonl(run));
+        out.push_str(&run_jsonl(report, run));
         out.push('\n');
     }
     out
@@ -305,15 +636,19 @@ fn p63_runs_jsonl(report: &P63CampaignReport) -> String {
 
 fn p63_runs_csv(report: &P63CampaignReport) -> String {
     let mut out = String::new();
-    out.push_str("run_index,run_id,total_persisted_bytes,ratio_effective_per_byte,operation_count,read_p99_us,update_p99_us,snapshot_p99_us,rebuild_p99_us,audit_p99_us,all_gates_passed\n");
+    out.push_str("campaign_id,run_index,mode,threshold_profile,ratio_effective_per_byte,total_persisted_bytes,operation_count,decision,timestamp_utc,read_p99_us,update_p99_us,snapshot_p99_us,rebuild_p99_us,audit_p99_us,all_gates_passed\n");
     for run in &report.runs {
         out.push_str(&format!(
-            "{},{},{},{:.6},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{:.6},{},{},{},{},{},{},{},{},{},{}\n",
+            report.campaign_id,
             run.run_index,
-            run.run_id,
-            run.total_persisted_bytes,
+            report.mode,
+            report.threshold_profile_resolved,
             run.ratio_effective_per_byte,
+            run.total_persisted_bytes,
             report.operation_count,
+            report.decision.as_str(),
+            report.machine_metadata.timestamp_utc,
             run.read_timing.p99_us,
             run.update_timing.p99_us,
             run.snapshot_timing.p99_us,
@@ -332,6 +667,8 @@ fn p63_summary_markdown(report: &P63CampaignReport) -> String {
          - Mode: `{}`\n\
          - Runs: `{}`\n\
          - Decision: `{}`\n\
+         - Campaign stability: `{}`\n\
+         - Threshold profile: `{}` (`{}`)\n\
          - Median ratio_effective_per_byte: `{:.6}`\n\
          - Median total_persisted_bytes: `{:.0}`\n\
          - Cost model: `{}`\n\
@@ -347,6 +684,9 @@ fn p63_summary_markdown(report: &P63CampaignReport) -> String {
         report.mode,
         report.repeat_count,
         report.decision.as_str(),
+        report.campaign_stability_status.as_str(),
+        report.threshold_profile,
+        report.threshold_profile_resolved,
         report.summary.ratio_effective_per_byte.median,
         report.summary.total_persisted_bytes.median,
         report.cost_model,
@@ -354,24 +694,120 @@ fn p63_summary_markdown(report: &P63CampaignReport) -> String {
     )
 }
 
-fn p63_decision(summary: &P63CampaignSummary, measured: &P62RealRatioReport) -> P63Decision {
-    if measured.runs.is_empty() || !summary.all_runs_passed {
-        return P63Decision::NoGoMeasuredRatioStability;
+fn p63_stability(
+    summary: &P63CampaignSummary,
+    profile: &P63ThresholdProfileSpec,
+) -> P63StabilityEvaluation {
+    let mut reasons = Vec::new();
+    if summary.run_count == 0 {
+        return P63StabilityEvaluation {
+            ratio: P63StabilityStatus::NotAvailable,
+            bytes: P63StabilityStatus::NotAvailable,
+            timing: P63StabilityStatus::NotAvailable,
+            campaign: P63StabilityStatus::NotAvailable,
+            reasons: vec!["no measured runs are available".to_string()],
+        };
     }
-    if measured.workloads.is_empty() {
-        return P63Decision::RecalibrateWorkloads;
+
+    if summary.run_count < profile.min_runs_required {
+        reasons.push(format!(
+            "run_count {} is below min_runs_required {}",
+            summary.run_count, profile.min_runs_required
+        ));
+        return P63StabilityEvaluation {
+            ratio: P63StabilityStatus::NotEnoughRuns,
+            bytes: P63StabilityStatus::NotEnoughRuns,
+            timing: P63StabilityStatus::NotEnoughRuns,
+            campaign: P63StabilityStatus::NotEnoughRuns,
+            reasons,
+        };
     }
-    P63Decision::RecalibrateThresholds
+
+    let ratio = stability_for_cv(
+        "ratio_effective_per_byte",
+        summary.ratio_effective_per_byte.coefficient_of_variation,
+        profile.max_ratio_cv,
+        false,
+        &mut reasons,
+    );
+    let bytes = stability_for_cv(
+        "total_persisted_bytes",
+        summary.total_persisted_bytes.coefficient_of_variation,
+        profile.max_bytes_cv,
+        false,
+        &mut reasons,
+    );
+    let timing_cv = max_f64(&[
+        summary.read_p99_us.coefficient_of_variation,
+        summary.update_p99_us.coefficient_of_variation,
+        summary.snapshot_p99_us.coefficient_of_variation,
+        summary.rebuild_p99_us.coefficient_of_variation,
+        summary.audit_p99_us.coefficient_of_variation,
+    ]);
+    let timing = match profile.max_timing_cv {
+        Some(max_timing_cv) => {
+            stability_for_cv("timing_p99", timing_cv, max_timing_cv, true, &mut reasons)
+        }
+        None => {
+            reasons.push("timing stability threshold is not configured".to_string());
+            P63StabilityStatus::NotAvailable
+        }
+    };
+    let campaign = aggregate_stability(&[ratio, bytes, timing]);
+    reasons.push(format!(
+        "campaign stability aggregated as {}",
+        campaign.as_str()
+    ));
+    P63StabilityEvaluation {
+        ratio,
+        bytes,
+        timing,
+        campaign,
+        reasons,
+    }
 }
 
-fn p63_decision_reasons(decision: P63Decision, summary: &P63CampaignSummary) -> Vec<String> {
+fn p63_decision(
+    summary: &P63CampaignSummary,
+    measured: &P62RealRatioReport,
+    profile: &P63ThresholdProfileSpec,
+    stability: &P63StabilityEvaluation,
+) -> P63Decision {
+    if measured.runs.is_empty()
+        || !summary.all_runs_passed
+        || stability.campaign == P63StabilityStatus::Unstable
+    {
+        return P63Decision::NoGoMeasuredRatioStability;
+    }
+    if measured.workloads.is_empty() || profile.require_realish_workloads {
+        return P63Decision::RecalibrateWorkloads;
+    }
+    if !profile.allow_validate {
+        return P63Decision::RecalibrateThresholds;
+    }
+    if stability.campaign == P63StabilityStatus::Stable {
+        P63Decision::ValidateMeasuredRatioCalibration
+    } else {
+        P63Decision::RecalibrateThresholds
+    }
+}
+
+fn p63_decision_reasons(
+    decision: P63Decision,
+    summary: &P63CampaignSummary,
+    profile: &P63ThresholdProfileSpec,
+    stability: &P63StabilityEvaluation,
+) -> Vec<String> {
     let mut reasons = vec![
         "campaign exports available".to_string(),
         "robust summary available".to_string(),
         "measured_real_v1 still needs threshold calibration".to_string(),
         "no external dataset yet".to_string(),
         "timing values are machine-dependent".to_string(),
+        format!("threshold profile: {}", profile.profile_id),
+        format!("allow_validate: {}", profile.allow_validate),
         format!("measured run count: {}", summary.run_count),
+        format!("campaign stability status: {}", stability.campaign.as_str()),
     ];
     if summary.all_runs_passed {
         reasons.push("all measured runs passed inherited P62 safety gates".to_string());
@@ -383,6 +819,68 @@ fn p63_decision_reasons(decision: P63Decision, summary: &P63CampaignSummary) -> 
         );
     }
     reasons
+}
+
+fn stability_for_cv(
+    label: &str,
+    cv: f64,
+    threshold: f64,
+    timing_is_soft: bool,
+    reasons: &mut Vec<String>,
+) -> P63StabilityStatus {
+    if !cv.is_finite() {
+        reasons.push(format!(
+            "{} coefficient of variation is not available",
+            label
+        ));
+        return P63StabilityStatus::NotAvailable;
+    }
+    if cv <= threshold {
+        reasons.push(format!(
+            "{} coefficient of variation {:.6} <= threshold {:.6}",
+            label, cv, threshold
+        ));
+        return P63StabilityStatus::Stable;
+    }
+    if timing_is_soft {
+        reasons.push(format!(
+            "{} coefficient of variation {:.6} exceeds soft threshold {:.6}",
+            label, cv, threshold
+        ));
+        if cv > threshold * 4.0 {
+            P63StabilityStatus::Unstable
+        } else {
+            P63StabilityStatus::Warn
+        }
+    } else {
+        reasons.push(format!(
+            "{} coefficient of variation {:.6} exceeds threshold {:.6}",
+            label, cv, threshold
+        ));
+        if cv > threshold * 2.0 {
+            P63StabilityStatus::Unstable
+        } else {
+            P63StabilityStatus::Warn
+        }
+    }
+}
+
+fn aggregate_stability(statuses: &[P63StabilityStatus]) -> P63StabilityStatus {
+    if statuses.contains(&P63StabilityStatus::Unstable) {
+        P63StabilityStatus::Unstable
+    } else if statuses.contains(&P63StabilityStatus::NotEnoughRuns) {
+        P63StabilityStatus::NotEnoughRuns
+    } else if statuses.contains(&P63StabilityStatus::Warn) {
+        P63StabilityStatus::Warn
+    } else if statuses.contains(&P63StabilityStatus::NotAvailable) {
+        P63StabilityStatus::NotAvailable
+    } else {
+        P63StabilityStatus::Stable
+    }
+}
+
+fn max_f64(samples: &[f64]) -> f64 {
+    samples.iter().copied().reduce(f64::max).unwrap_or(0.0)
 }
 
 fn p63_run_passed(run: &P62MeasuredRun) -> bool {
@@ -452,6 +950,32 @@ fn command_first_line(command: &str, args: &[&str]) -> Option<String> {
     })
 }
 
+fn extract_json_string(json: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{}\":", key);
+    let start = json.find(&needle)? + needle.len();
+    let rest = json[start..].trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+fn extract_metric_median(json: &str, metric_name: &str) -> Option<f64> {
+    let metric_needle = format!("\"{}\": {{", metric_name);
+    let metric_start = json.find(&metric_needle)?;
+    let metric_block = &json[metric_start..];
+    extract_json_number(metric_block, "median")
+}
+
+fn extract_json_number(json: &str, key: &str) -> Option<f64> {
+    let needle = format!("\"{}\":", key);
+    let start = json.find(&needle)? + needle.len();
+    let rest = json[start..].trim_start();
+    let end = rest
+        .find(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-'))
+        .unwrap_or(rest.len());
+    rest[..end].parse::<f64>().ok()
+}
+
 fn git_dirty() -> Option<bool> {
     let output = Command::new("git")
         .args(["status", "--short"])
@@ -505,6 +1029,61 @@ fn machine_metadata_json(out: &mut String, metadata: &P63MachineMetadata) {
         4,
     ));
     out.push_str(&json_string("profile", &metadata.profile, false, 4));
+    out.push_str("  },\n");
+}
+
+fn threshold_profile_config_json(out: &mut String, profile: &P63ThresholdProfileSpec) {
+    out.push_str("  \"threshold_profile_config\": {\n");
+    out.push_str(&json_string("profile_id", profile.profile_id, true, 4));
+    match profile.alias {
+        Some(alias) => out.push_str(&json_string("alias", alias, true, 4)),
+        None => out.push_str("    \"alias\": null,\n"),
+    }
+    out.push_str(&json_usize(
+        "min_runs_required",
+        profile.min_runs_required,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64("max_ratio_cv", profile.max_ratio_cv, true, 4));
+    out.push_str(&json_f64("max_bytes_cv", profile.max_bytes_cv, true, 4));
+    match profile.max_timing_cv {
+        Some(value) => out.push_str(&json_f64("max_timing_cv", value, true, 4)),
+        None => out.push_str("    \"max_timing_cv\": null,\n"),
+    }
+    match profile.min_median_ratio_effective_per_byte {
+        Some(value) => out.push_str(&json_f64(
+            "min_median_ratio_effective_per_byte",
+            value,
+            true,
+            4,
+        )),
+        None => out.push_str("    \"min_median_ratio_effective_per_byte\": null,\n"),
+    }
+    out.push_str(&json_bool(
+        "require_machine_metadata",
+        profile.require_machine_metadata,
+        true,
+        4,
+    ));
+    out.push_str(&json_bool(
+        "require_campaign_exports",
+        profile.require_campaign_exports,
+        true,
+        4,
+    ));
+    out.push_str(&json_bool(
+        "require_realish_workloads",
+        profile.require_realish_workloads,
+        true,
+        4,
+    ));
+    out.push_str(&json_bool(
+        "allow_validate",
+        profile.allow_validate,
+        false,
+        4,
+    ));
     out.push_str("  },\n");
 }
 
@@ -639,13 +1218,19 @@ fn run_json(run: &P62MeasuredRun) -> String {
     out
 }
 
-fn run_jsonl(run: &P62MeasuredRun) -> String {
+fn run_jsonl(report: &P63CampaignReport, run: &P62MeasuredRun) -> String {
     format!(
-        "{{\"run_index\":{},\"run_id\":\"{}\",\"total_persisted_bytes\":{},\"ratio_effective_per_byte\":{:.6},\"create_count\":{},\"read_count\":{},\"update_count\":{},\"delete_count\":{},\"snapshot_count\":{},\"rebuild_count\":{},\"audit_count\":{},\"read_p99_us\":{},\"update_p99_us\":{},\"snapshot_p99_us\":{},\"rebuild_p99_us\":{},\"audit_p99_us\":{},\"guard_refused\":{},\"dangerous_or_adversarial_refused\":{},\"audit_passed\":{},\"rebuild_passed\":{},\"snapshot_roundtrip_passed\":{}}}",
+        "{{\"campaign_id\":\"{}\",\"run_index\":{},\"run_id\":\"{}\",\"mode\":\"{}\",\"threshold_profile\":\"{}\",\"ratio_effective_per_byte\":{:.6},\"total_persisted_bytes\":{},\"operation_count\":{},\"decision\":\"{}\",\"timestamp_utc\":\"{}\",\"create_count\":{},\"read_count\":{},\"update_count\":{},\"delete_count\":{},\"snapshot_count\":{},\"rebuild_count\":{},\"audit_count\":{},\"read_p99_us\":{},\"update_p99_us\":{},\"snapshot_p99_us\":{},\"rebuild_p99_us\":{},\"audit_p99_us\":{},\"guard_refused\":{},\"dangerous_or_adversarial_refused\":{},\"audit_passed\":{},\"rebuild_passed\":{},\"snapshot_roundtrip_passed\":{}}}",
+        escape_json(&report.campaign_id),
         run.run_index,
         escape_json(&run.run_id),
-        run.total_persisted_bytes,
+        escape_json(&report.mode),
+        escape_json(&report.threshold_profile_resolved),
         run.ratio_effective_per_byte,
+        run.total_persisted_bytes,
+        report.operation_count,
+        report.decision.as_str(),
+        escape_json(&report.machine_metadata.timestamp_utc),
         run.create_count,
         run.read_count,
         run.update_count,

@@ -21,6 +21,7 @@ cargo run -p atlas-cli -- bench --mode standard --format json
 cargo run -p atlas-cli -- ratio examples/p53_strict.atlas --mode smoke --format json
 cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json --runs 3
 cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode smoke --format json --runs 5 --export-dir artifacts/p63/smoke --threshold-profile p63
+cargo run -p atlas-cli -- ratio-campaign-compare artifacts/p63/smoke/campaign_report.json artifacts/p63/standard/campaign_report.json --format json
 ```
 
 After `cargo build`, the same CLI is available as `atlas-cli`. The `atlasc`
@@ -86,3 +87,5 @@ suivantes sans stocker de gros logs.
 Le premier export compact de campagne P63 s'active avec
 `ratio-real --threshold-profile p63 --export-dir <path>` et produit
 `campaign_report.json`, `runs.jsonl`, `runs.csv` et `summary.md` localement.
+Le profil `p63` resout vers `p63_conservative_v1`, et les campagnes peuvent etre
+comparees avec `ratio-campaign-compare`.
