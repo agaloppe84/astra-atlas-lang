@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 20] {
+fn invalid_cases() -> [InvalidCase; 21] {
     [
         InvalidCase {
             name: "bad_version",
@@ -72,7 +72,7 @@ fn invalid_cases() -> [InvalidCase; 20] {
         InvalidCase {
             name: "threshold_bad",
             text: include_str!("../examples/invalid/threshold_bad.atlas"),
-            code: DiagnosticCode::ThresholdInvalid,
+            code: DiagnosticCode::ThresholdOutOfRange,
             family: Some("stream_processing"),
             field: Some("threshold"),
             message: "outside",
@@ -134,9 +134,17 @@ fn invalid_cases() -> [InvalidCase; 20] {
             message: "duplicate family",
         },
         InvalidCase {
+            name: "duplicate_key",
+            text: include_str!("../examples/invalid/duplicate_key.atlas"),
+            code: DiagnosticCode::DuplicateKey,
+            family: Some("stream_processing"),
+            field: Some("action"),
+            message: "duplicate key 'action'",
+        },
+        InvalidCase {
             name: "missing_layout",
             text: include_str!("../examples/invalid/missing_layout.atlas"),
-            code: DiagnosticCode::FieldMissing,
+            code: DiagnosticCode::MissingLayout,
             family: Some("stream_processing"),
             field: Some("layout"),
             message: "required key 'layout' is missing",
@@ -144,23 +152,23 @@ fn invalid_cases() -> [InvalidCase; 20] {
         InvalidCase {
             name: "unknown_layout",
             text: include_str!("../examples/invalid/unknown_layout.atlas"),
-            code: DiagnosticCode::LayoutIndexMismatch,
+            code: DiagnosticCode::UnknownLayout,
             family: Some("stream_processing"),
             field: Some("layout"),
-            message: "expects action",
+            message: "unknown layout",
         },
         InvalidCase {
             name: "unknown_index",
             text: include_str!("../examples/invalid/unknown_index.atlas"),
-            code: DiagnosticCode::LayoutIndexMismatch,
+            code: DiagnosticCode::UnknownIndex,
             family: Some("stream_processing"),
             field: Some("index"),
-            message: "expects action",
+            message: "unknown index",
         },
         InvalidCase {
             name: "malformed_threshold",
             text: include_str!("../examples/invalid/malformed_threshold.atlas"),
-            code: DiagnosticCode::ThresholdInvalid,
+            code: DiagnosticCode::ThresholdMalformed,
             family: Some("stream_processing"),
             field: Some("threshold"),
             message: "not a finite number",
@@ -168,7 +176,7 @@ fn invalid_cases() -> [InvalidCase; 20] {
         InvalidCase {
             name: "threshold_low",
             text: include_str!("../examples/invalid/threshold_low.atlas"),
-            code: DiagnosticCode::ThresholdInvalid,
+            code: DiagnosticCode::ThresholdOutOfRange,
             family: Some("stream_processing"),
             field: Some("threshold"),
             message: "outside",
@@ -254,14 +262,23 @@ fn required_diagnostic_codes_have_stable_strings() {
         (DiagnosticCode::SnapshotFullStrict, "E_SNAPSHOT_FULL_STRICT"),
         (DiagnosticCode::ActionUnknown, "E_ACTION_UNKNOWN"),
         (DiagnosticCode::SafetyUnknown, "E_SAFETY_UNKNOWN"),
+        (DiagnosticCode::UnknownLayout, "E_UNKNOWN_LAYOUT"),
+        (DiagnosticCode::UnknownIndex, "E_UNKNOWN_INDEX"),
         (
             DiagnosticCode::LayoutIndexMismatch,
             "E_LAYOUT_INDEX_MISMATCH",
+        ),
+        (DiagnosticCode::ThresholdMalformed, "E_THRESHOLD_MALFORMED"),
+        (
+            DiagnosticCode::ThresholdOutOfRange,
+            "E_THRESHOLD_OUT_OF_RANGE",
         ),
         (DiagnosticCode::ThresholdInvalid, "E_THRESHOLD_INVALID"),
         (DiagnosticCode::MissingFamilies, "E_MISSING_FAMILIES"),
         (DiagnosticCode::FamilyUnknown, "E_FAMILY_UNKNOWN"),
         (DiagnosticCode::FamilyDuplicate, "E_FAMILY_DUPLICATE"),
+        (DiagnosticCode::DuplicateKey, "E_DUPLICATE_KEY"),
+        (DiagnosticCode::MissingLayout, "E_MISSING_LAYOUT"),
         (DiagnosticCode::FieldMissing, "E_FIELD_MISSING"),
         (DiagnosticCode::ParseError, "E_PARSE"),
         (

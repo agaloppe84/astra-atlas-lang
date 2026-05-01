@@ -44,7 +44,7 @@ const INVALID_EXAMPLES: &[(&str, DiagnosticCode)] = &[
     ),
     (
         include_str!("../examples/invalid/threshold_bad.atlas"),
-        DiagnosticCode::ThresholdInvalid,
+        DiagnosticCode::ThresholdOutOfRange,
     ),
     (
         include_str!("../examples/invalid/missing_families.atlas"),

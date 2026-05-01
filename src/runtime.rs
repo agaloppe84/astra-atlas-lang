@@ -653,6 +653,10 @@ pub fn metrics_json_file_mode(path: &str, mode: WorkloadMode) -> AtlasResult<Str
     run_workload_file(path, mode).map(|metrics| runtime_metrics_json(&metrics))
 }
 
+pub fn bench_report_json_file(path: &str, mode: WorkloadMode) -> AtlasResult<String> {
+    run_workload_file(path, mode).map(|metrics| bench_report_json(&metrics))
+}
+
 pub fn p58_metrics_json(text: &str, mode: WorkloadMode) -> AtlasResult<String> {
     p58_report_json(text, mode)
 }
@@ -1118,6 +1122,107 @@ pub fn runtime_metrics_json(metrics: &RuntimeMetrics) -> String {
     out
 }
 
+pub fn bench_report_json(metrics: &RuntimeMetrics) -> String {
+    let samples = proxy_cost_samples(metrics);
+    let warnings = bench_warnings(metrics);
+    let decision = bench_decision(metrics);
+    let synthetic_cost_units = metrics.read_pseudo_latency
+        + metrics.update_pseudo_latency
+        + metrics.snapshot_pseudo_latency
+        + metrics.rebuild_pseudo_latency;
+
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str("  \"astra_iteration\": \"ASTRA-SYS-P60\",\n");
+    out.push_str("  \"benchmark_kind\": \"deterministic_structural_proxy\",\n");
+    out.push_str(&format!(
+        "  \"program_path\": \"{}\",\n",
+        escape_json(&metrics.atlas_file)
+    ));
+    out.push_str(&format!(
+        "  \"mode\": \"{}\",\n",
+        escape_json(&metrics.mode)
+    ));
+    out.push_str(&format!(
+        "  \"atlas_version\": \"{}\",\n",
+        metrics.atlas_version
+    ));
+    out.push_str(&format!(
+        "  \"family_count\": {},\n",
+        metrics.families_total
+    ));
+    out.push_str(&format!(
+        "  \"workload_count\": {},\n",
+        metrics.workload_family_count
+    ));
+    out.push_str(&format!(
+        "  \"workload_family_count\": {},\n",
+        metrics.workload_family_count
+    ));
+    out.push_str(&format!(
+        "  \"encoded_segments\": {},\n",
+        metrics.encoded_segments_total
+    ));
+    out.push_str(&format!("  \"reads\": {},\n", metrics.read_count));
+    out.push_str(&format!("  \"updates\": {},\n", metrics.update_count));
+    out.push_str(&format!("  \"snapshots\": {},\n", metrics.snapshot_count));
+    out.push_str(&format!("  \"rebuilds\": {},\n", metrics.rebuild_count));
+    out.push_str(&format!(
+        "  \"query_success_rate\": {:.3},\n",
+        metrics.query_success_rate
+    ));
+    out.push_str(&format!(
+        "  \"synthetic_cost_units\": {},\n",
+        synthetic_cost_units
+    ));
+    out.push_str("  \"elapsed_ms\": null,\n");
+    out.push_str(&format!(
+        "  \"p50_proxy_cost_units\": {},\n",
+        percentile_cost(&samples, 50)
+    ));
+    out.push_str(&format!(
+        "  \"p95_proxy_cost_units\": {},\n",
+        percentile_cost(&samples, 95)
+    ));
+    out.push_str(&format!(
+        "  \"p99_proxy_cost_units\": {},\n",
+        percentile_cost(&samples, 99)
+    ));
+    out.push_str(&format!(
+        "  \"state_checksum\": {},\n",
+        metrics.state_checksum
+    ));
+    out.push_str(&format!(
+        "  \"rebuild_checksum\": {},\n",
+        metrics.rebuild_checksum
+    ));
+    out.push_str(&format!(
+        "  \"rebuild_matches\": {},\n",
+        metrics.rebuild_matches
+    ));
+    out.push_str(&format!(
+        "  \"no_guard_encoded\": {},\n",
+        metrics.no_guard_encoded
+    ));
+    out.push_str(&format!(
+        "  \"local_manual_only\": {},\n",
+        metrics.mode == WorkloadMode::Ambitious.as_str()
+    ));
+    out.push_str(&format!(
+        "  \"ci_safe\": {},\n",
+        metrics.mode != WorkloadMode::Ambitious.as_str()
+    ));
+    out.push_str(&format!("  \"decision\": \"{}\",\n", decision));
+    out.push_str("  \"warnings\": [\n");
+    for (idx, warning) in warnings.iter().enumerate() {
+        let comma = if idx + 1 == warnings.len() { "" } else { "," };
+        out.push_str(&format!("    \"{}\"{}\n", escape_json(warning), comma));
+    }
+    out.push_str("  ]\n");
+    out.push('}');
+    out
+}
+
 pub fn p58_report_to_json(report: &P58Report) -> String {
     let mut out = String::new();
     out.push_str("{\n");
@@ -1437,6 +1542,57 @@ fn memory_amplification_proxy(runtime: &MemoryRuntime) -> f64 {
     } else {
         (segments + runtime.stores.len()) as f64 / segments as f64
     }
+}
+
+fn proxy_cost_samples(metrics: &RuntimeMetrics) -> Vec<u64> {
+    let mut samples = Vec::new();
+    samples.extend(std::iter::repeat_n(2, metrics.read_count));
+    samples.extend(std::iter::repeat_n(3, metrics.update_count));
+    for _ in 0..metrics.snapshot_count {
+        samples.push(metrics.snapshot_pseudo_latency);
+    }
+    for _ in 0..metrics.rebuild_count {
+        samples.push(metrics.rebuild_pseudo_latency);
+    }
+    samples.sort_unstable();
+    samples
+}
+
+fn percentile_cost(samples: &[u64], percentile: usize) -> u64 {
+    if samples.is_empty() {
+        return 0;
+    }
+    let rank = (percentile * samples.len() + 99) / 100;
+    let idx = rank.saturating_sub(1).min(samples.len() - 1);
+    samples[idx]
+}
+
+fn bench_decision(metrics: &RuntimeMetrics) -> &'static str {
+    if !metrics.strict_p53_preserved
+        || !metrics.no_guard_encoded
+        || !metrics.rebuild_matches
+        || metrics.query_success_rate < 1.0
+    {
+        "NO_GO"
+    } else if metrics.mode == WorkloadMode::Smoke.as_str() {
+        "RECALIBRATE"
+    } else {
+        "VALIDATE"
+    }
+}
+
+fn bench_warnings(metrics: &RuntimeMetrics) -> Vec<&'static str> {
+    let mut warnings = vec![
+        "deterministic structural proxy only; elapsed_ms is intentionally null",
+        "not a wall-clock or industrial performance benchmark",
+    ];
+    if metrics.mode == WorkloadMode::Smoke.as_str() {
+        warnings.push("smoke mode is CI-safe but intentionally partial");
+    }
+    if metrics.mode == WorkloadMode::Ambitious.as_str() {
+        warnings.push("ambitious mode is local/manual and not a CI requirement");
+    }
+    warnings
 }
 
 fn state_checksum(stores: &BTreeMap<String, BTreeMap<String, MemoryCell>>) -> u64 {

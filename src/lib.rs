@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
 
+pub mod cli;
 mod p57;
 mod runtime;
 pub use p57::*;
@@ -34,11 +35,17 @@ pub enum DiagnosticCode {
     SnapshotFullStrict,
     ActionUnknown,
     SafetyUnknown,
+    UnknownLayout,
+    UnknownIndex,
     LayoutIndexMismatch,
+    ThresholdMalformed,
+    ThresholdOutOfRange,
     ThresholdInvalid,
     MissingFamilies,
     FamilyUnknown,
     FamilyDuplicate,
+    DuplicateKey,
+    MissingLayout,
     FieldMissing,
     ParseError,
     ActiveWithoutSafety,
@@ -53,11 +60,17 @@ impl DiagnosticCode {
             DiagnosticCode::SnapshotFullStrict => "E_SNAPSHOT_FULL_STRICT",
             DiagnosticCode::ActionUnknown => "E_ACTION_UNKNOWN",
             DiagnosticCode::SafetyUnknown => "E_SAFETY_UNKNOWN",
+            DiagnosticCode::UnknownLayout => "E_UNKNOWN_LAYOUT",
+            DiagnosticCode::UnknownIndex => "E_UNKNOWN_INDEX",
             DiagnosticCode::LayoutIndexMismatch => "E_LAYOUT_INDEX_MISMATCH",
+            DiagnosticCode::ThresholdMalformed => "E_THRESHOLD_MALFORMED",
+            DiagnosticCode::ThresholdOutOfRange => "E_THRESHOLD_OUT_OF_RANGE",
             DiagnosticCode::ThresholdInvalid => "E_THRESHOLD_INVALID",
             DiagnosticCode::MissingFamilies => "E_MISSING_FAMILIES",
             DiagnosticCode::FamilyUnknown => "E_FAMILY_UNKNOWN",
             DiagnosticCode::FamilyDuplicate => "E_FAMILY_DUPLICATE",
+            DiagnosticCode::DuplicateKey => "E_DUPLICATE_KEY",
+            DiagnosticCode::MissingLayout => "E_MISSING_LAYOUT",
             DiagnosticCode::FieldMissing => "E_FIELD_MISSING",
             DiagnosticCode::ParseError => "E_PARSE",
             DiagnosticCode::ActiveWithoutSafety => "E_ACTIVE_WITHOUT_SAFETY",
@@ -76,9 +89,13 @@ impl DiagnosticCode {
             DiagnosticCode::SafetyUnknown => {
                 "The safety mode is not part of the strict P53 safety set."
             }
+            DiagnosticCode::UnknownLayout => "The layout is not part of the strict P53 layout set.",
+            DiagnosticCode::UnknownIndex => "The index is not part of the strict P53 index set.",
             DiagnosticCode::LayoutIndexMismatch => {
                 "The family action, layout, and index do not match the strict P53 table."
             }
+            DiagnosticCode::ThresholdMalformed => "The threshold is not a finite number.",
+            DiagnosticCode::ThresholdOutOfRange => "The threshold is outside the strict P53 range.",
             DiagnosticCode::ThresholdInvalid => {
                 "The threshold must be a finite number in the strict P53 range."
             }
@@ -89,6 +106,8 @@ impl DiagnosticCode {
                 "The family name is not part of the strict P53 family set."
             }
             DiagnosticCode::FamilyDuplicate => "A strict P53 family appears more than once.",
+            DiagnosticCode::DuplicateKey => "A .atlas line repeats the same key.",
+            DiagnosticCode::MissingLayout => "A strict P53 family is missing its layout key.",
             DiagnosticCode::FieldMissing => "A required .atlas key is missing.",
             DiagnosticCode::ParseError => {
                 "The .atlas source does not match the strict line format."
@@ -105,11 +124,17 @@ impl DiagnosticCode {
             "E_SNAPSHOT_FULL_STRICT" => Some(DiagnosticCode::SnapshotFullStrict),
             "E_ACTION_UNKNOWN" => Some(DiagnosticCode::ActionUnknown),
             "E_SAFETY_UNKNOWN" => Some(DiagnosticCode::SafetyUnknown),
+            "E_UNKNOWN_LAYOUT" => Some(DiagnosticCode::UnknownLayout),
+            "E_UNKNOWN_INDEX" => Some(DiagnosticCode::UnknownIndex),
             "E_LAYOUT_INDEX_MISMATCH" => Some(DiagnosticCode::LayoutIndexMismatch),
+            "E_THRESHOLD_MALFORMED" => Some(DiagnosticCode::ThresholdMalformed),
+            "E_THRESHOLD_OUT_OF_RANGE" => Some(DiagnosticCode::ThresholdOutOfRange),
             "E_THRESHOLD_INVALID" => Some(DiagnosticCode::ThresholdInvalid),
             "E_MISSING_FAMILIES" => Some(DiagnosticCode::MissingFamilies),
             "E_FAMILY_UNKNOWN" => Some(DiagnosticCode::FamilyUnknown),
             "E_FAMILY_DUPLICATE" => Some(DiagnosticCode::FamilyDuplicate),
+            "E_DUPLICATE_KEY" => Some(DiagnosticCode::DuplicateKey),
+            "E_MISSING_LAYOUT" => Some(DiagnosticCode::MissingLayout),
             "E_FIELD_MISSING" => Some(DiagnosticCode::FieldMissing),
             "E_PARSE" => Some(DiagnosticCode::ParseError),
             "E_ACTIVE_WITHOUT_SAFETY" => Some(DiagnosticCode::ActiveWithoutSafety),
@@ -277,10 +302,26 @@ const FAMILY_RULES: &[FamilyRule] = &[
     },
 ];
 
-fn parse_kv(tokens: &[&str], line: usize) -> AtlasResult<BTreeMap<String, String>> {
+fn parse_kv(
+    tokens: &[&str],
+    line: usize,
+    family: Option<&str>,
+) -> AtlasResult<BTreeMap<String, String>> {
     let mut kv = BTreeMap::new();
     for tok in tokens {
         if let Some((k, v)) = tok.split_once('=') {
+            if kv.contains_key(k) {
+                let mut diagnostic = Diagnostic::new(
+                    DiagnosticCode::DuplicateKey,
+                    format!("duplicate key '{}'", k),
+                )
+                .with_line(line)
+                .with_field(k);
+                if let Some(family) = family {
+                    diagnostic = diagnostic.with_family(family);
+                }
+                return Err(diagnostic);
+            }
             kv.insert(k.to_string(), v.trim_matches('"').to_string());
         } else {
             return Err(Diagnostic::new(
@@ -300,12 +341,14 @@ fn required_value(
     family: Option<&str>,
 ) -> AtlasResult<String> {
     kv.get(key).cloned().ok_or_else(|| {
-        let mut diagnostic = Diagnostic::new(
-            DiagnosticCode::FieldMissing,
-            format!("required key '{}' is missing", key),
-        )
-        .with_line(line)
-        .with_field(key);
+        let code = if key == "layout" {
+            DiagnosticCode::MissingLayout
+        } else {
+            DiagnosticCode::FieldMissing
+        };
+        let mut diagnostic = Diagnostic::new(code, format!("required key '{}' is missing", key))
+            .with_line(line)
+            .with_field(key);
         if let Some(family) = family {
             diagnostic = diagnostic.with_family(family);
         }
@@ -337,7 +380,7 @@ pub fn parse_atlas_str(text: &str) -> AtlasResult<AtlasProgram> {
         }
         match parts[0] {
             "atlas" => {
-                let kv = parse_kv(&parts[1..], line_number)?;
+                let kv = parse_kv(&parts[1..], line_number, None)?;
                 let v = required_value(&kv, "version", line_number, None)?;
                 if v != "0.1" {
                     return Err(Diagnostic::new(
@@ -350,7 +393,7 @@ pub fn parse_atlas_str(text: &str) -> AtlasResult<AtlasProgram> {
                 version = Some(v);
             }
             "runtime" => {
-                runtime = parse_kv(&parts[1..], line_number)?;
+                runtime = parse_kv(&parts[1..], line_number, None)?;
             }
             "family" => {
                 if parts.len() < 2 {
@@ -362,11 +405,11 @@ pub fn parse_atlas_str(text: &str) -> AtlasResult<AtlasProgram> {
                     .with_field("name"));
                 }
                 let name = parts[1].to_string();
-                let kv = parse_kv(&parts[2..], line_number)?;
+                let kv = parse_kv(&parts[2..], line_number, Some(&name))?;
                 let threshold_raw = required_value(&kv, "threshold", line_number, Some(&name))?;
                 let threshold = threshold_raw.parse::<f64>().map_err(|_| {
                     Diagnostic::new(
-                        DiagnosticCode::ThresholdInvalid,
+                        DiagnosticCode::ThresholdMalformed,
                         format!("threshold '{}' is not a finite number", threshold_raw),
                     )
                     .with_line(line_number)
@@ -426,6 +469,14 @@ fn is_known_action(action: &str) -> bool {
 
 fn is_known_safety(safety: &str) -> bool {
     FAMILY_RULES.iter().any(|rule| rule.safety == safety)
+}
+
+fn is_known_layout(layout: &str) -> bool {
+    FAMILY_RULES.iter().any(|rule| rule.layout == layout)
+}
+
+fn is_known_index(index: &str) -> bool {
+    FAMILY_RULES.iter().any(|rule| rule.index == index)
 }
 
 pub fn typecheck(program: &AtlasProgram) -> AtlasResult<()> {
@@ -505,12 +556,18 @@ pub fn typecheck(program: &AtlasProgram) -> AtlasResult<()> {
             .with_field("safety"));
         }
 
-        if !family.threshold.is_finite()
-            || family.threshold < MIN_THRESHOLD
-            || family.threshold > MAX_THRESHOLD
-        {
+        if !family.threshold.is_finite() {
             return Err(Diagnostic::new(
-                DiagnosticCode::ThresholdInvalid,
+                DiagnosticCode::ThresholdMalformed,
+                format!("threshold {} is not a finite number", family.threshold),
+            )
+            .with_family(family.name.clone())
+            .with_field("threshold"));
+        }
+
+        if family.threshold < MIN_THRESHOLD || family.threshold > MAX_THRESHOLD {
+            return Err(Diagnostic::new(
+                DiagnosticCode::ThresholdOutOfRange,
                 format!(
                     "threshold {:.3} is outside [{:.2}, {:.2}]",
                     family.threshold, MIN_THRESHOLD, MAX_THRESHOLD
@@ -527,6 +584,24 @@ pub fn typecheck(program: &AtlasProgram) -> AtlasResult<()> {
             )
             .with_family(family.name.clone())
             .with_field("safety"));
+        }
+
+        if !is_known_layout(&family.layout) {
+            return Err(Diagnostic::new(
+                DiagnosticCode::UnknownLayout,
+                format!("unknown layout '{}'", family.layout),
+            )
+            .with_family(family.name.clone())
+            .with_field("layout"));
+        }
+
+        if !is_known_index(&family.index) {
+            return Err(Diagnostic::new(
+                DiagnosticCode::UnknownIndex,
+                format!("unknown index '{}'", family.index),
+            )
+            .with_family(family.name.clone())
+            .with_field("index"));
         }
 
         if family.action != rule.action

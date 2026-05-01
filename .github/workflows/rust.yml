@@ -69,7 +69,7 @@ jobs:
           check_invalid examples/invalid/bad_safety.atlas E_SAFETY_UNKNOWN
           check_invalid examples/invalid/layout_mismatch.atlas E_LAYOUT_INDEX_MISMATCH
           check_invalid examples/invalid/index_mismatch.atlas E_LAYOUT_INDEX_MISMATCH
-          check_invalid examples/invalid/threshold_bad.atlas E_THRESHOLD_INVALID
+          check_invalid examples/invalid/threshold_bad.atlas E_THRESHOLD_OUT_OF_RANGE
           check_invalid examples/invalid/missing_families.atlas E_MISSING_FAMILIES
           check_invalid examples/invalid/unknown_family.atlas E_FAMILY_UNKNOWN
           check_invalid examples/invalid/missing_semicolon.atlas E_PARSE
@@ -77,11 +77,12 @@ jobs:
           check_invalid examples/invalid/dangerous_encoded.atlas E_ACTION_UNKNOWN
           check_invalid examples/invalid/malformed_family.atlas E_FIELD_MISSING
           check_invalid examples/invalid/duplicate_family.atlas E_FAMILY_DUPLICATE
-          check_invalid examples/invalid/missing_layout.atlas E_FIELD_MISSING
-          check_invalid examples/invalid/unknown_layout.atlas E_LAYOUT_INDEX_MISMATCH
-          check_invalid examples/invalid/unknown_index.atlas E_LAYOUT_INDEX_MISMATCH
-          check_invalid examples/invalid/malformed_threshold.atlas E_THRESHOLD_INVALID
-          check_invalid examples/invalid/threshold_low.atlas E_THRESHOLD_INVALID
+          check_invalid examples/invalid/duplicate_key.atlas E_DUPLICATE_KEY
+          check_invalid examples/invalid/missing_layout.atlas E_MISSING_LAYOUT
+          check_invalid examples/invalid/unknown_layout.atlas E_UNKNOWN_LAYOUT
+          check_invalid examples/invalid/unknown_index.atlas E_UNKNOWN_INDEX
+          check_invalid examples/invalid/malformed_threshold.atlas E_THRESHOLD_MALFORMED
+          check_invalid examples/invalid/threshold_low.atlas E_THRESHOLD_OUT_OF_RANGE
 
       - name: Runtime smoke
         run: |

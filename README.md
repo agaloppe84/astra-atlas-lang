@@ -17,6 +17,7 @@ cargo run -p atlas-cli -- report examples/p53_strict.atlas --format json
 cargo run -p atlas-cli -- report examples/p53_strict.atlas --mode standard --format markdown
 cargo run -p atlas-cli -- bench --mode smoke
 cargo run -p atlas-cli -- bench --mode standard
+cargo run -p atlas-cli -- bench --mode standard --format json
 ```
 
 After `cargo build`, the same CLI is available as `atlas-cli`. The `atlasc`
@@ -52,3 +53,9 @@ des decisions attendues et du perimetre CI.
 P59 interprete les acquis P58 comme invariants ASTRA classiques, sans nouveau
 runtime ni changement de grammaire `.atlas`. Voir
 [docs/validation_p59_classique.md](docs/validation_p59_classique.md).
+
+## Validation P60 systeme
+
+P60 nettoie les entrees CLI, specialise les diagnostics invalides et ajoute une
+trace JSON de benchmark structurel. Voir
+[docs/validation_p60_sys_cleanup.md](docs/validation_p60_sys_cleanup.md).

@@ -54,7 +54,7 @@ généraliste.
 | `P59_G1_standard_mode_classical_reference` | `standard` est la référence classique raisonnable. | `p58_report_standard.json`, `p58_tests.rs` |
 | `P59_G2_smoke_mode_recalibrate_interpreted` | `smoke` est partiel et son `RECALIBRATE` est attendu. | `p58_report_smoke.json`, `p58_tests.rs` |
 | `P59_G3_p58_reports_stable_as_classical_surface` | Les reports P58 sont stables et goldenisés. | `tests/golden/p58_report_*.json` |
-| `P59_G4_invalid_corpus_preserved_20_20` | Les 20 invalides restent refusés. | `examples/invalid/*.atlas`, `atlas_tests.rs`, CI |
+| `P59_G4_invalid_corpus_preserved_20_20` | Les 20 invalides P59 restent refusés; les sprints SYS ultérieurs peuvent étendre le corpus sans affaiblir cette gate. | `examples/invalid/*.atlas`, `atlas_tests.rs`, CI |
 | `P59_G5_p57_compatibility_preserved` | Le report P57 reste inchangé. | `tests/golden/p57_report.json`, `p57_tests.rs` |
 | `P59_G6_no_atlas_grammar_change` | P59 n'ajoute aucune syntaxe `.atlas`. | absence de changement parser/grammar |
 | `P59_G7_ambitious_local_manual_status_clarified` | `ambitious` reste local/manual, non requis en CI. | `docs/validation_p58.md`, CI |
@@ -91,8 +91,8 @@ Actions. Ce document ne constitue pas une preuve d'exécution.
   benchmarks de performance réalistes.
 - Le warning Cargo indiquant que `src/main.rs` est partagé par `atlas-cli` et
   `atlasc` est connu et non bloquant.
-- Le corpus invalide est strict, mais les diagnostics layout/index inconnus
-  passent encore par `E_LAYOUT_INDEX_MISMATCH`.
+- P59 laissait certains diagnostics volontairement agrégés. P60 peut les
+  spécialiser sans changer la grammaire `.atlas`.
 
 ## Après P59
 

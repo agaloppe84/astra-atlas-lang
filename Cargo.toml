@@ -16,4 +16,4 @@ path = "src/main.rs"
 
 [[bin]]
 name = "atlasc"
-path = "src/main.rs"
+path = "src/bin/atlasc.rs"
