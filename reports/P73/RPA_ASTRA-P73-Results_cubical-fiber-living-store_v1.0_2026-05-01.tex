@@ -1,0 +1,276 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P73 Results -- Cubical Fiber Living Store},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+\emergencystretch=3em
+\sloppy
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+
+\title{\textbf{ASTRA-P73 Results}\\Cubical Fiber Living Store}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P73 du repo \Code{astra-atlas-lang}. P73 teste
+une topologie cubique pour le living procedural fiber store: cellules, six
+faces, contraintes de recollement, audit de gluing, compaction par face,
+corruption/recovery controlee, et comparaison au baseline P72.
+\end{abstract}
+
+\section{But de ASTRA-P73}
+
+P73 teste si une topologie cubique peut ameliorer le ratio vivant en factorisant
+les frontieres locales, en bornant les updates aux cellules/faces concernees,
+en localisant l'audit, et en compactant les journaux de faces. Le cube n'est
+pas presente comme une compression magique: il ne stocke pas plus
+d'information par bit. Il organise les relations locales pour eviter certaines
+duplications de frontiere.
+
+\section{Position apres P72}
+
+P72 avait etabli un store vivant fonctionnel:
+
+\begin{itemize}
+  \item \Code{ratio_living = 2.366879};
+  \item \Code{reopen_equivalence = true};
+  \item \Code{journal_replay_steps = 809};
+  \item \Code{compaction_savings = 27483 bytes};
+  \item \Code{guard_decision = NO_GO_GUARD_INCOMPRESSIBLE_REFUSED};
+  \item decision: \Decision{RECALIBRATE_P72_LIVING_COST_MODEL}.
+\end{itemize}
+
+\section{Modele cubique}
+
+Chaque cellule cubique contient un interieur fibre, six faces, des voisins, des
+contraintes de recollement, un acteur local, un journal, des checksums, de
+l'audit metadata et un statut de tombstone.
+
+Faces requises:
+\Code{plus_x}, \Code{minus_x}, \Code{plus_y}, \Code{minus_y}, \Code{plus_z},
+\Code{minus_z}.
+
+Contraintes de recollement:
+\Code{checksum_match}, \Code{delta_match}, \Code{boundary_summary_match},
+\Code{residual_consistency}, \Code{tombstone_consistency}.
+
+\section{Syntaxe \Code{.atlas}}
+
+P73 ajoute une surface declarative specialisee:
+
+\begin{longtable}{@{}p{0.34\linewidth}p{0.58\linewidth}@{}}
+\toprule
+Bloc & Role \\
+\midrule
+\endhead
+\Code{p73_topology} & cube 3D, 6 faces, adjacency \Code{von_neumann_6}, faces partagees, gluing checked \\
+\Code{p73_fiber_schema} & payload interieur, payload face, gluing rule, projection, journal, audit, compaction \\
+\Code{p73_actor_policy} & acteur local a scope \Code{cell_plus_faces}, cache face-aware, journal face-delta \\
+\Code{p73_cubical_gates} & gluing coherent, pas de stockage face cache, propagation bornee, reopen equivalence, guard no false gain \\
+\bottomrule
+\end{longtable}
+
+\section{Validation locale}
+
+Commandes executees:
+
+\begin{verbatim}
+cargo fmt --all -- --check
+cargo build --workspace
+cargo test --workspace
+cargo test --test p73_tests
+cargo test --test p72_tests
+bash scripts/validate_p58_local.sh
+cargo run -p atlas-cli -- cubical-store-bench ... standard ...
+cargo run -p atlas-cli -- cubical-store-bench ... ambitious ...
+\end{verbatim}
+
+Resultats:
+
+\begin{itemize}
+  \item \Code{p73_tests.rs}: 12 passed;
+  \item invalides P73 dedies: 8/8 refuses;
+  \item invalid corpus total: 52 refuses apres P73;
+  \item aucun timing golden;
+  \item campagnes standard et ambitious executees localement.
+\end{itemize}
+
+\section{Campagne standard}
+
+Parametres: cycles 10, queries 5000, updates 1000, deletes 100,
+corruptions 3, compaction threshold, adaptive on. Duree observee:
+\Code{real 0.33s}.
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{cells} & 356 \\
+\Code{faces} & 2,136 \\
+\Code{source_dataset_bytes} & 1,514,888 \\
+\Code{exact_recoverable_bytes} & 1,449,352 \\
+\Code{cold_persisted_bytes} & 422,477 \\
+\Code{runtime_peak_bytes} & 98,037 \\
+\Code{ratio_living} & 2.679054 \\
+\Code{P72 baseline ratio_living} & 2.366879 \\
+\Code{cubical_gain_vs_p72} & 1.131893 \\
+\Code{face_factorization_gain} & 0.540997 \\
+\Code{gluing_overhead_ratio} & 0.072411 \\
+\Code{topology_overhead_ratio} & 0.009695 \\
+\Code{journal_replay_steps} & 1,466 \\
+\Code{face_journal_replay_steps} & 2,600 \\
+\Code{compaction_savings_bytes} & 85,334 \\
+\Code{face_compaction_savings_bytes} & 12,800 \\
+\Code{corruptions detected/recovered} & 3 / 3 \\
+\Code{drift_status} & NO\_DRIFT \\
+\bottomrule
+\end{longtable}
+
+\section{Campagne ambitious}
+
+Parametres: cycles 25, queries 20000, updates 5000, deletes 500,
+corruptions 10, compaction aggressive, adaptive on. Duree observee:
+\Code{real 0.33s}.
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{cells} & 356 \\
+\Code{faces} & 2,136 \\
+\Code{cold_persisted_bytes} & 550,477 \\
+\Code{runtime_peak_bytes} & 105,717 \\
+\Code{ratio_living} & 2.141876 \\
+\Code{P72 baseline ratio_living} & 2.366879 \\
+\Code{cubical_gain_vs_p72} & 0.904937 \\
+\Code{face_factorization_gain} & 0.540997 \\
+\Code{gluing_overhead_ratio} & 0.195089 \\
+\Code{journal_replay_steps} & 5,881 \\
+\Code{face_journal_replay_steps} & 13,000 \\
+\Code{compaction_savings_bytes} & 426,667 \\
+\Code{face_compaction_savings_bytes} & 64,000 \\
+\Code{corruptions detected/recovered} & 10 / 10 \\
+\Code{drift_status} & NO\_DRIFT \\
+\bottomrule
+\end{longtable}
+
+\section{Comparaison P72}
+
+\begin{longtable}{@{}p{0.42\linewidth}r r@{}}
+\toprule
+Campagne & Ratio living & Vs P72 \\
+\midrule
+\endhead
+P72 baseline & 2.366879 & 1.000000 \\
+P73 standard & 2.679054 & 1.131893 \\
+P73 ambitious & 2.141876 & 0.904937 \\
+\bottomrule
+\end{longtable}
+
+Standard supporte l'hypothese cubique. Ambitious montre que les journaux de
+faces et le gluing peuvent effacer le gain sous pression d'updates.
+
+\section{Cout topology et gluing}
+
+Topology overhead:
+
+\begin{itemize}
+  \item standard: \Code{0.009695};
+  \item ambitious: \Code{0.007441}.
+\end{itemize}
+
+Gluing overhead:
+
+\begin{itemize}
+  \item standard: \Code{0.072411};
+  \item ambitious: \Code{0.195089}.
+\end{itemize}
+
+Le cout de gluing est le facteur limitant avant promotion.
+
+\section{Guard et recovery}
+
+La garde incompressible reste refusee:
+\Decision{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED}. Les corruptions injectees sont
+detectees et recuperees dans les deux campagnes. Aucun stale face read et aucun
+echec de gluing ne sont observes.
+
+\section{Decision}
+
+Decision P73:
+\Decision{RECALIBRATE_P73_CUBICAL_FIBER_TOPOLOGY}.
+
+La promotion est refusee car standard bat P72, mais ambitious ne maintient pas
+le gain. Le modele est prometteur, mais les politiques de face journal, gluing
+audit et compaction doivent etre recalibrees.
+
+\section{Ce que P73 etablit}
+
+\begin{itemize}
+  \item cellules cubiques a six faces dans le runtime;
+  \item gluing coherente en standard et ambitious;
+  \item reopen equivalence vraie;
+  \item corruption detectee et recovery controle;
+  \item standard ameliore le ratio living vs P72;
+  \item le guard incompressible reste honnete.
+\end{itemize}
+
+\section{Ce que P73 ne prouve pas}
+
+\begin{itemize}
+  \item pas de promotion architecturale finale;
+  \item pas de preuve informationnelle d'un gain par cube;
+  \item pas de dataset externe;
+  \item recovery controle, pas adversarial complet;
+  \item ambitious montre une degradation sous gluing/journaux lourds.
+\end{itemize}
+
+\section{Recommendation P74}
+
+P74 devrait calibrer le cout de gluing et des journaux de faces: batching
+d'updates par direction, audit cadence selective, compaction adaptative des
+faces, summaries plus compacts, et stress de locality random/cache churn.
+
+\section{Journal d'iteration}
+
+\begin{itemize}
+  \item 2026-05-02: ajout du module \Code{p73}, de \Code{cubical-store-bench}
+  et de la syntaxe cubical declarative;
+  \item 2026-05-02: ajout de huit invalides P73 et de \Code{tests/p73_tests.rs};
+  \item 2026-05-02: campagnes standard et ambitious executees localement;
+  \item 2026-05-02: Results P73 genere avec Tectonic via
+  \Code{scripts/build_report.sh}.
+\end{itemize}
+
+\end{document}

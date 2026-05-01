@@ -1,0 +1,6 @@
+atlas version=0.1;
+p73_topology id=cubical_3d cell=cube faces=6 adjacency=von_neumann_6 boundary_policy=shared_faces gluing=checked;
+p73_fiber_schema id=cubical_code_fiber cell_payload=generated_plus_residual face_payload=boundary_summary gluing_rule=checksum_and_delta projection=shallow journal=compact audit=face_checks compaction=threshold;
+p73_actor_policy id=cubical_local_actor scope=cell_plus_faces budget_bytes=4194304 cache=face_aware journal=face_delta audit=gluing_consistency compaction=face_threshold;
+p73_face_probe direction=diagonal_w;
+p73_cubical_gates face_gluing_consistency=true hidden_face_storage=false face_update_propagation_bounded=true cubical_reopen_equivalence=true runtime_cache_not_required_for_correctness=true guard_no_false_gain=true;

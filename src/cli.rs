@@ -12,7 +12,8 @@ use crate::{
     P66RatioFibersOptions, P67AuditPolicy, P67CachePolicy, P67CompactionPolicy,
     P67FiberCalibrationOptions, P67FiberProjectionDepth, P67QueryLocality, P68PromotionOptions,
     P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, P71FiberStoreOptions,
-    P72CompactionPolicy, P72LivingStoreOptions, RealDataCorpusKind, WorkloadMode,
+    P72CompactionPolicy, P72LivingStoreOptions, P73CompareP72, P73CubicalStoreOptions,
+    RealDataCorpusKind, WorkloadMode,
 };
 use std::env;
 
@@ -70,12 +71,28 @@ fn run(args: &[String]) -> Result<(), String> {
         "contract-replay" => contract_replay_command(args),
         "fiber-store-bench" => fiber_store_bench_command(args),
         "living-store-bench" => living_store_bench_command(args),
+        "cubical-store-bench" => cubical_store_bench_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
 }
 
 fn check_path(path: &str) -> Result<(), String> {
+    if crate::p73_cubical_file_looks_like(path) {
+        return match crate::p73_cubical_lifecycle_report_file(path) {
+            Ok(report) => {
+                println!(
+                    "OK: p73_topology={} faces={} gluing={} reopen={}",
+                    report.topology_id,
+                    report.faces,
+                    report.face_gluing_consistency,
+                    report.cubical_reopen_equivalence
+                );
+                Ok(())
+            }
+            Err(diagnostic) => Err(diagnostic.to_string()),
+        };
+    }
     if crate::p72_lifecycle_file_looks_like(path) {
         return match crate::p72_lifecycle_report_file(path) {
             Ok(report) => {
@@ -519,6 +536,17 @@ fn living_store_bench_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn cubical_store_bench_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p73_cubical_store_options(&args[1..])?;
+    let report = crate::p73_cubical_store_bench(options.options, &options.export_dir)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p73_cubical_store_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p73_cubical_store_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -613,6 +641,13 @@ struct P71FiberStoreCliOptions {
 #[derive(Debug, Clone, PartialEq)]
 struct P72LivingStoreCliOptions {
     options: P72LivingStoreOptions,
+    export_dir: String,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P73CubicalStoreCliOptions {
+    options: P73CubicalStoreOptions,
     export_dir: String,
     format: OutputFormat,
 }
@@ -2376,6 +2411,231 @@ fn parse_p72_compact_value(value: &str) -> Result<P72CompactionPolicy, String> {
     })
 }
 
+fn parse_p73_cubical_store_options(args: &[String]) -> Result<P73CubicalStoreCliOptions, String> {
+    let mut corpora = None;
+    let mut budget_bytes = None;
+    let mut cycles = None;
+    let mut queries = None;
+    let mut updates = None;
+    let mut deletes = None;
+    let mut corruptions = None;
+    let mut compact = None;
+    let mut adaptive = None;
+    let mut compare_p72 = Some(P73CompareP72::Off);
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--corpus" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --corpus"))?;
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corpus=") {
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 1;
+        } else if arg == "--budget-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("cubical-store-bench requires a value after --budget-bytes")
+            })?;
+            budget_bytes = Some(parse_positive_u64(
+                value,
+                "cubical-store-bench",
+                "--budget-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--budget-bytes=") {
+            budget_bytes = Some(parse_positive_u64(
+                value,
+                "cubical-store-bench",
+                "--budget-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--cycles" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --cycles"))?;
+            cycles = Some(parse_positive_usize(
+                value,
+                "cubical-store-bench",
+                "--cycles",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cycles=") {
+            cycles = Some(parse_positive_usize(
+                value,
+                "cubical-store-bench",
+                "--cycles",
+            )?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(
+                value,
+                "cubical-store-bench",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "cubical-store-bench",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--updates" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --updates"))?;
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "cubical-store-bench",
+                "--updates",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--updates=") {
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "cubical-store-bench",
+                "--updates",
+            )?);
+            idx += 1;
+        } else if arg == "--deletes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --deletes"))?;
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "cubical-store-bench",
+                "--deletes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--deletes=") {
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "cubical-store-bench",
+                "--deletes",
+            )?);
+            idx += 1;
+        } else if arg == "--corruptions" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --corruptions"))?;
+            corruptions = Some(parse_nonnegative_usize(
+                value,
+                "cubical-store-bench",
+                "--corruptions",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corruptions=") {
+            corruptions = Some(parse_nonnegative_usize(
+                value,
+                "cubical-store-bench",
+                "--corruptions",
+            )?);
+            idx += 1;
+        } else if arg == "--compact" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --compact"))?;
+            compact = Some(parse_p72_compact_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--compact=") {
+            compact = Some(parse_p72_compact_value(value)?);
+            idx += 1;
+        } else if arg == "--adaptive" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --adaptive"))?;
+            adaptive = Some(parse_bool_value(
+                value,
+                "cubical-store-bench",
+                "--adaptive",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--adaptive=") {
+            adaptive = Some(parse_bool_value(
+                value,
+                "cubical-store-bench",
+                "--adaptive",
+            )?);
+            idx += 1;
+        } else if arg == "--compare-p72" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --compare-p72"))?;
+            compare_p72 = Some(parse_p73_compare_p72(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--compare-p72=") {
+            compare_p72 = Some(parse_p73_compare_p72(value)?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("cubical-store-bench requires a value after --format"))?;
+            format = Some(parse_format_value(value, "cubical-store-bench")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "cubical-store-bench")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "cubical-store-bench received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P73CubicalStoreCliOptions {
+        options: P73CubicalStoreOptions {
+            corpora: corpora.ok_or_else(|| {
+                usage("cubical-store-bench requires --corpus all|code|logs|json|csv|guard")
+            })?,
+            budget_bytes: budget_bytes
+                .ok_or_else(|| usage("cubical-store-bench requires --budget-bytes N"))?,
+            cycles: cycles.ok_or_else(|| usage("cubical-store-bench requires --cycles N"))?,
+            queries: queries.ok_or_else(|| usage("cubical-store-bench requires --queries N"))?,
+            updates: updates.ok_or_else(|| usage("cubical-store-bench requires --updates N"))?,
+            deletes: deletes.ok_or_else(|| usage("cubical-store-bench requires --deletes N"))?,
+            corruptions: corruptions
+                .ok_or_else(|| usage("cubical-store-bench requires --corruptions N"))?,
+            compact: compact.ok_or_else(|| {
+                usage("cubical-store-bench requires --compact off|threshold|aggressive")
+            })?,
+            adaptive: adaptive
+                .ok_or_else(|| usage("cubical-store-bench requires --adaptive on|off"))?,
+            compare_p72: compare_p72.unwrap_or(P73CompareP72::Off),
+        },
+        export_dir: export_dir
+            .ok_or_else(|| usage("cubical-store-bench requires --export-dir <path>"))?,
+        format: format
+            .ok_or_else(|| usage("cubical-store-bench requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p73_compare_p72(value: &str) -> Result<P73CompareP72, String> {
+    P73CompareP72::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "cubical-store-bench received unsupported --compare-p72 '{}'; expected baseline|off",
+            value
+        ))
+    })
+}
+
 fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
     match value {
         "true" | "on" | "yes" => Ok(true),
@@ -2722,6 +2982,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli contract-replay <file.atlas> --fixtures all|log|sparse|json|hybrid --mode smoke|standard|ambitious --runs N --queries N --tolerance-percent N [--export-dir <path>] --format json|markdown",
         "  atlas-cli fiber-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --runs N --queries N --export-dir <path> --format json|markdown",
         "  atlas-cli living-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --runs N --queries N --updates N --deletes N --compact off|threshold|aggressive --adaptive on|off [--reopen-check on|off] --export-dir <path> --format json|markdown",
+        "  atlas-cli cubical-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --cycles N --queries N --updates N --deletes N --corruptions N --compact off|threshold|aggressive --adaptive on|off --compare-p72 baseline|off --export-dir <path> --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

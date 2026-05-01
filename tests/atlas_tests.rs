@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 44] {
+fn invalid_cases() -> [InvalidCase; 52] {
     [
         InvalidCase {
             name: "bad_version",
@@ -364,6 +364,70 @@ fn invalid_cases() -> [InvalidCase; 44] {
             family: None,
             field: None,
             message: "unknown block 'p72_lifecycle'",
+        },
+        InvalidCase {
+            name: "p73_unknown_face_direction",
+            text: include_str!("../examples/invalid/p73_unknown_face_direction.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p73_topology'",
+        },
+        InvalidCase {
+            name: "p73_missing_face_checksum",
+            text: include_str!("../examples/invalid/p73_missing_face_checksum.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p73_topology'",
+        },
+        InvalidCase {
+            name: "p73_bad_gluing_rule",
+            text: include_str!("../examples/invalid/p73_bad_gluing_rule.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p73_topology'",
+        },
+        InvalidCase {
+            name: "p73_hidden_face_storage",
+            text: include_str!("../examples/invalid/p73_hidden_face_storage.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p73_topology'",
+        },
+        InvalidCase {
+            name: "p73_unbounded_face_update",
+            text: include_str!("../examples/invalid/p73_unbounded_face_update.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p73_topology'",
+        },
+        InvalidCase {
+            name: "p73_invalid_cube_adjacency",
+            text: include_str!("../examples/invalid/p73_invalid_cube_adjacency.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p73_topology'",
+        },
+        InvalidCase {
+            name: "p73_cache_required_for_correctness",
+            text: include_str!("../examples/invalid/p73_cache_required_for_correctness.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p73_topology'",
+        },
+        InvalidCase {
+            name: "p73_missing_cubical_reopen_gate",
+            text: include_str!("../examples/invalid/p73_missing_cubical_reopen_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p73_topology'",
         },
     ]
 }

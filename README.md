@@ -358,6 +358,41 @@ Resultat local P72 standard: `reopen_equivalence=true`,
 `drift_status=HARD_DRIFT`, decision
 `RECALIBRATE_P72_LIVING_COST_MODEL`.
 
+## Validation P73 cubical fiber living store
+
+P73 ajoute `cubical-store-bench` pour tester une topologie cubique du store
+vivant: cellules, six faces, contraintes de recollement, audit de gluing,
+compaction par faces, corruption/recovery controlee, et comparaison au baseline
+P72.
+
+```bash
+cargo run -p atlas-cli -- cubical-store-bench \
+  --corpus all \
+  --budget-bytes 10485760 \
+  --cycles 10 \
+  --queries 5000 \
+  --updates 1000 \
+  --deletes 100 \
+  --corruptions 3 \
+  --compact threshold \
+  --adaptive on \
+  --compare-p72 baseline \
+  --export-dir artifacts/p73/cubical_store_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p73/` et sont ignores par Git. Voir
+[docs/validation/astra-p73-cubical-fiber-living-store.md](docs/validation/astra-p73-cubical-fiber-living-store.md),
+l'audit de tests
+[docs/analysis/ASTRA-P73-test-stack-audit.md](docs/analysis/ASTRA-P73-test-stack-audit.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P73-cubical-fiber-living-store-analysis.md](docs/analysis/ASTRA-P73-cubical-fiber-living-store-analysis.md).
+
+Resultat local P73: standard ameliore `ratio_living` vs P72
+(`cubical_gain_vs_p72=1.131893`), mais ambitious retombe sous P72
+(`0.904937`) sous pression de gluing/journaux de faces. Decision:
+`RECALIBRATE_P73_CUBICAL_FIBER_TOPOLOGY`.
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport
