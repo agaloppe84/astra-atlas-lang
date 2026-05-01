@@ -252,6 +252,30 @@ le manifeste compact
 et le rapport d'analyse
 [docs/analysis/ASTRA-P68-address-fiber-promotion-gate-analysis.md](docs/analysis/ASTRA-P68-address-fiber-promotion-gate-analysis.md).
 
+## Validation P69 representation contract
+
+P69 ajoute un contrat `.atlas` specialise pour expliciter ce qui est stocke par
+l'architecture `address_fiber_actor_managed_v1`: generateur, parametres,
+dictionnaire/ROM, index, residus, journal, cache, etat acteur, audit metadata,
+manifest et safety metadata.
+
+```bash
+cargo run -p atlas-cli -- contract-check examples/valid/p69_address_fiber_contract.atlas --format json
+cargo run -p atlas-cli -- contract-run examples/valid/p69_address_fiber_contract.atlas \
+  --mode standard \
+  --runs 30 \
+  --queries 1000 \
+  --export-dir artifacts/p69/contract_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p69/` et sont ignores par Git. Voir
+[docs/validation/astra-p69-address-fiber-representation-contract.md](docs/validation/astra-p69-address-fiber-representation-contract.md),
+la syntaxe contractuelle
+[docs/validation/astra-p69-atlas-contract-syntax.md](docs/validation/astra-p69-atlas-contract-syntax.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P69-address-fiber-representation-contract-analysis.md](docs/analysis/ASTRA-P69-address-fiber-representation-contract-analysis.md).
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

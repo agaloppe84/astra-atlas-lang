@@ -11,7 +11,7 @@ use crate::{
     P65QueryLocality, P65RatioActorsOptions, P66JournalPolicy, P66RateProfile,
     P66RatioFibersOptions, P67AuditPolicy, P67CachePolicy, P67CompactionPolicy,
     P67FiberCalibrationOptions, P67FiberProjectionDepth, P67QueryLocality, P68PromotionOptions,
-    WorkloadMode,
+    P69ContractRunOptions, WorkloadMode,
 };
 use std::env;
 
@@ -64,12 +64,26 @@ fn run(args: &[String]) -> Result<(), String> {
         "ratio-fibers" => ratio_fibers_command(args),
         "ratio-fibers-calibrate" => ratio_fibers_calibrate_command(args),
         "ratio-fibers-promote" => ratio_fibers_promote_command(args),
+        "contract-check" => contract_check_command(args),
+        "contract-run" => contract_run_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
 }
 
 fn check_path(path: &str) -> Result<(), String> {
+    if crate::p69_contract_file_looks_like(path) {
+        return match crate::p69_contract_report_file(path) {
+            Ok(report) => {
+                println!(
+                    "OK: p69_contract={} architecture={} all_storage_counted={}",
+                    report.contract_id, report.architecture_id, report.all_storage_counted
+                );
+                Ok(())
+            }
+            Err(diagnostic) => Err(diagnostic.to_string()),
+        };
+    }
     match validate_file(path) {
         Ok(program) => {
             println!(
@@ -416,6 +430,37 @@ fn ratio_fibers_promote_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn contract_check_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("contract-check requires a .atlas path"))?;
+    if !has_json_format(&args[2..]) {
+        return Err(usage("contract-check requires --format json"));
+    }
+    let json =
+        crate::p69_contract_check_json_file(path).map_err(|diagnostic| diagnostic.to_string())?;
+    println!("{}", json);
+    Ok(())
+}
+
+fn contract_run_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("contract-run requires a .atlas path"))?;
+    let options = parse_p69_contract_run_options(&args[2..])?;
+    let report = crate::p69_contract_run_report_file(path, options.options)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    if let Some(export_dir) = &options.export_dir {
+        crate::write_p69_contract_exports(&report, export_dir)
+            .map_err(|diagnostic| diagnostic.to_string())?;
+    }
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p69_contract_report_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p69_contract_summary_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -482,6 +527,13 @@ struct P67CalibrationCliOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct P68PromotionCliOptions {
     options: P68PromotionOptions,
+    export_dir: Option<String>,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct P69ContractRunCliOptions {
+    options: P69ContractRunOptions,
     export_dir: Option<String>,
     format: OutputFormat,
 }
@@ -1716,6 +1768,81 @@ fn parse_p68_mode_pair(value: &str) -> Result<(), String> {
     }
 }
 
+fn parse_p69_contract_run_options(args: &[String]) -> Result<P69ContractRunCliOptions, String> {
+    let mut mode = None;
+    let mut runs = None;
+    let mut queries = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--mode" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-run requires a value after --mode"))?;
+            mode = Some(parse_mode_value(value, "contract-run")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--mode=") {
+            mode = Some(parse_mode_value(value, "contract-run")?);
+            idx += 1;
+        } else if arg == "--runs" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-run requires a value after --runs"))?;
+            runs = Some(parse_positive_usize(value, "contract-run", "--runs")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--runs=") {
+            runs = Some(parse_positive_usize(value, "contract-run", "--runs")?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-run requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(value, "contract-run", "--queries")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(value, "contract-run", "--queries")?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-run requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-run requires a value after --format"))?;
+            format = Some(parse_format_value(value, "contract-run")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "contract-run")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "contract-run received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P69ContractRunCliOptions {
+        options: P69ContractRunOptions {
+            mode: mode
+                .ok_or_else(|| usage("contract-run requires --mode smoke|standard|ambitious"))?,
+            runs: runs.ok_or_else(|| usage("contract-run requires --runs N"))?,
+            queries: queries.ok_or_else(|| usage("contract-run requires --queries N"))?,
+        },
+        export_dir,
+        format: format.ok_or_else(|| usage("contract-run requires --format json|markdown"))?,
+    })
+}
+
 fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
     match value {
         "true" | "on" | "yes" => Ok(true),
@@ -2032,6 +2159,8 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli ratio-fibers <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --fiber-strategy point-fiber|neighborhood-fiber|actor-fiber|actor-neighborhood-fiber|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N --budget-bytes N --journal eager|lazy|compact [--cache on|off] [--update-rate low|medium|high] [--audit-rate low|medium|high] [--export-dir <path>] --format json|markdown",
         "  atlas-cli ratio-fibers-calibrate <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --mode standard|ambitious --runs N --queries N --radius-grid a,b --budget-grid a,b --cache-grid off,on,compact --journal-grid eager,lazy,compact --audit-grid minimal,sampled,full --compaction-grid off,threshold,aggressive --query-locality-grid clustered,random,mixed --fiber-projection-grid shallow,medium,full [--export-dir <path>] --format json|markdown",
         "  atlas-cli ratio-fibers-promote <file.atlas> [--run-ablations] [--run-stress] [--phase-map] [--mode-pair standard,ambitious] [--strict true|false] [--export-dir <path>] --format json|markdown",
+        "  atlas-cli contract-check <file.atlas> --format json",
+        "  atlas-cli contract-run <file.atlas> --mode smoke|standard|ambitious --runs N --queries N [--export-dir <path>] --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

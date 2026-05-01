@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 21] {
+fn invalid_cases() -> [InvalidCase; 28] {
     [
         InvalidCase {
             name: "bad_version",
@@ -180,6 +180,62 @@ fn invalid_cases() -> [InvalidCase; 21] {
             family: Some("stream_processing"),
             field: Some("threshold"),
             message: "outside",
+        },
+        InvalidCase {
+            name: "p69_missing_fiber_schema",
+            text: include_str!("../examples/invalid/p69_missing_fiber_schema.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p69_unknown_generator",
+            text: include_str!("../examples/invalid/p69_unknown_generator.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p69_unaccounted_actor_state",
+            text: include_str!("../examples/invalid/p69_unaccounted_actor_state.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p69_missing_all_storage_counted_gate",
+            text: include_str!("../examples/invalid/p69_missing_all_storage_counted_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p69_zero_budget_actor",
+            text: include_str!("../examples/invalid/p69_zero_budget_actor.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p69_unknown_projection",
+            text: include_str!("../examples/invalid/p69_unknown_projection.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p69_contract_unknown_reference",
+            text: include_str!("../examples/invalid/p69_contract_unknown_reference.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
         },
     ]
 }

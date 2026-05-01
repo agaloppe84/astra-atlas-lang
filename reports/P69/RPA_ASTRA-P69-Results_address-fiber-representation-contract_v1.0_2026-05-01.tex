@@ -1,0 +1,316 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P69 Results -- Address-Fiber Representation Contract},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+\emergencystretch=3em
+\sloppy
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+\newcommand{\NA}{\textit{n/a}}
+
+\title{\textbf{ASTRA-P69 Results}\\Address-Fiber Representation Contract}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P69 du repo \Code{astra-atlas-lang}. La trace
+vivante reste le rapport Markdown d'analyse P69. Ce document \LaTeX{}/PDF est
+le livrable Results fig\'e pour le contrat de representation address-fiber.
+Aucun r\'esultat nouveau n'est invent\'e ici.
+\end{abstract}
+
+\section{But de ASTRA-P69}
+
+P69 formalise ce qui est stocke lorsque l'architecture
+\Code{address_fiber_actor_managed_v1}, promue en P68, est utilisee. L'espace
+virtuel n'est pas materialise globalement. Ce qui est stocke est un code
+procedural fini: espace d'adresses, schema de fibre, generateur, parametres,
+dictionnaire/ROM, index, residus, journal, politique acteur, budgets, gates de
+s\^urete et metadata d'audit.
+
+\section{Position apres P68}
+
+P68 a promu le candidat address-fiber actor-managed:
+
+\begin{itemize}
+  \item standard gate: \Code{PASS};
+  \item ambitious gate: \Code{PASS};
+  \item pairing: \Code{COMPATIBLE};
+  \item decision: \Decision{PROMOTE_P68_ADDRESS_FIBER_ARCHITECTURE};
+  \item standard net gain: 17.379955;
+  \item standard overhead: 0.123446;
+  \item ambitious net gain: 13.335472;
+  \item ambitious overhead: 0.119345.
+\end{itemize}
+
+P69 transforme cette promotion runtime en contrat de representation.
+
+\section{Question centrale: forme stockee du code procedural}
+
+La question P69 est:
+
+\begin{quote}
+Quelle forme finie est reellement payee, et comment empecher qu'un cache, un
+journal, un index, un acteur ou une metadata soit cache hors du cout?
+\end{quote}
+
+Le modele retenu est:
+
+\begin{verbatim}
+ProceduralCode =
+  AddressSpace
+  + FiberSchema
+  + Generator
+  + QuantizedParameters
+  + Index
+  + Residuals
+  + Journal
+  + ActorPolicy
+  + Budgets
+  + SafetyGates
+  + AuditMetadata
+\end{verbatim}
+
+\section{Syntaxe .atlas P69}
+
+P69 ajoute une syntaxe declarative et specialisee, lineaire, sans transformer
+\Code{.atlas} en langage generaliste:
+
+\begin{longtable}{@{}p{0.30\linewidth}p{0.60\linewidth}@{}}
+\toprule
+Bloc & Role \\
+\midrule
+\endhead
+\Code{atlas version=0.1;} & version contractuelle ASTRA \\
+\Code{p69_contract} & id, architecture et cost model \\
+\Code{address_space} & grille virtuelle, dimensions et unites declarees \\
+\Code{fiber_schema} & fibre locale, projection, index, journal, audit, compaction \\
+\Code{generator} & composantes procedurales, parametres, dictionnaire et residus \\
+\Code{actor_policy} & budget, cache, journal, audit, compaction et etat acteur \\
+\Code{representation_contract} & references croisees entre les blocs \\
+\Code{stored} & champs payes marques \Code{accounted} et bytes associes \\
+\Code{contract_gates} & gates de gain, overhead, conflits, stale reads et refus budget \\
+\bottomrule
+\end{longtable}
+
+\section{Parser et typechecker}
+
+Le module \Code{src/p69.rs} ajoute un parser/typechecker specialise. Il verifie:
+
+\begin{itemize}
+  \item l'architecture \Code{address_fiber_actor_managed_v1};
+  \item le modele de cout \Code{measured_or_declared_contract_v1};
+  \item les references address space, fiber schema, generator et actor policy;
+  \item \Code{budget_bytes > 0};
+  \item les politiques projection, journal, audit, compaction et cache connues;
+  \item la coherence journal/audit/compaction entre fibre et acteur;
+  \item tous les champs de stockage requis marques \Code{accounted};
+  \item \Code{all_storage_counted = true};
+  \item zero conflicts et zero stale reads.
+\end{itemize}
+
+\section{Commande repo-first}
+
+Deux commandes sont ajoutees:
+
+\begin{verbatim}
+cargo run -p atlas-cli -- contract-check \
+  examples/valid/p69_address_fiber_contract.atlas --format json
+
+cargo run -p atlas-cli -- contract-run \
+  examples/valid/p69_address_fiber_contract.atlas \
+  --mode standard --runs 30 --queries 1000 \
+  --export-dir artifacts/p69/contract_standard --format json
+\end{verbatim}
+
+\Code{check} route aussi les fichiers P69 contractuels vers le parser P69, tout
+en preservant le chemin P53 strict pour les programmes historiques.
+
+\section{Validation locale}
+
+\begin{longtable}{@{}p{0.52\linewidth}p{0.16\linewidth}p{0.24\linewidth}@{}}
+\toprule
+Commande & Statut & Sortie importante \\
+\midrule
+\endhead
+\Code{cargo fmt --all -- --check} & PASS & formatage OK \\
+\Code{cargo build --workspace} & PASS & workspace build OK \\
+\Code{cargo test --workspace} & PASS & suite complete OK \\
+\Code{cargo test --test p69_tests} & PASS & 8 tests passes \\
+\Code{cargo test --test p68_tests} & PASS & 9 tests passes \\
+\Code{bash scripts/validate_p58_local.sh} & PASS & 28 invalides refuses \\
+\Code{atlas-cli check P69 contract} & PASS & contrat accepte \\
+\Code{contract-run standard 30x1000} & PASS & real 0.26s \\
+\bottomrule
+\end{longtable}
+
+\section{Invalides P69}
+
+Sept mutants P69 sont ajoutes et refuses:
+
+\begin{itemize}
+  \item \Code{p69_missing_fiber_schema.atlas};
+  \item \Code{p69_unknown_generator.atlas};
+  \item \Code{p69_unaccounted_actor_state.atlas};
+  \item \Code{p69_missing_all_storage_counted_gate.atlas};
+  \item \Code{p69_zero_budget_actor.atlas};
+  \item \Code{p69_unknown_projection.atlas};
+  \item \Code{p69_contract_unknown_reference.atlas}.
+\end{itemize}
+
+\section{Cost breakdown}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Champ & Bytes \\
+\midrule
+\endhead
+\Code{generator_code_bytes} & 4,096 \\
+\Code{parameter_bytes} & 16,384 \\
+\Code{dictionary_or_rom_bytes} & 32,768 \\
+\Code{index_bytes} & 24,576 \\
+\Code{residual_bytes} & 65,536 \\
+\Code{journal_bytes} & 4,096 \\
+\Code{cache_bytes} & 8,192 \\
+\Code{actor_state_bytes} & 12,288 \\
+\Code{audit_metadata_bytes} & 4,096 \\
+\Code{manifest_bytes} & 2,048 \\
+\Code{safety_metadata_bytes} & 2,048 \\
+\Code{total_contract_bytes} & 176,128 \\
+\bottomrule
+\end{longtable}
+
+\section{Metriques virtuelles et fibre}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{virtual_declared_units} & 64,000,000 \\
+\Code{fiber_declared_units} & 9,600,000 \\
+\Code{fiber_generated_units} & 54,000 \\
+\Code{fiber_effective_units} & 8,448,000 \\
+\Code{virtual_effective_units} & 8,448,000 \\
+\Code{contract_ratio_effective_per_byte} & 47.965116 \\
+\Code{fiber_ratio_effective_per_byte} & 47.965116 \\
+\Code{address_fiber_net_gain} & 17.379955 \\
+\bottomrule
+\end{longtable}
+
+\section{Hidden storage risk}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Champ & Valeur \\
+\midrule
+\endhead
+\Code{all_storage_counted} & true \\
+\Code{hidden_storage_risk} & low \\
+\Code{missing_cost_fields} & [] \\
+\Code{hidden_storage_penalty} & 0.000000 \\
+\Code{accounted_storage_ratio} & 1.000000 \\
+\bottomrule
+\end{longtable}
+
+\section{Compatibilite ancienne}
+
+Le statut reporte est:
+
+\begin{verbatim}
+P53/P58/P68 paths preserved
+\end{verbatim}
+
+\Code{examples/p53_strict.atlas} continue de passer. Les invalides historiques
+restent refuses et les goldens P57/P58/P61 restent couverts par la suite
+workspace.
+
+\section{Decision P69}
+
+\begin{center}
+\Decision{PROMOTE_P69_ADDRESS_FIBER_CONTRACT_RUNTIME}
+\end{center}
+
+La promotion est limitee au contrat repo/runtime: le contrat parse, typechecke,
+instancie un rapport, refuse les mutants P69 et compte tous les couts exiges.
+
+\section{Ce que P69 etablit}
+
+\begin{itemize}
+  \item une forme stockee explicite du code procedural ASTRA;
+  \item un lien contractuel avec l'architecture promue P68;
+  \item une decomposition de cout qui inclut cache, journal, acteur, index,
+    residus, audit, manifest et safety metadata;
+  \item des invalides dedies pour empecher le drift du contrat;
+  \item des exports locaux ignores par Git.
+\end{itemize}
+
+\section{Ce que P69 ne prouve pas encore}
+
+\begin{itemize}
+  \item pas de validation scientifique finale multi-machine;
+  \item pas de dataset externe lourd;
+  \item pas encore de comparaison declared-vs-measured sur plusieurs familles de
+    contrats;
+  \item pas de garantie que tous les futurs contrats seront optimaux.
+\end{itemize}
+
+\section{Recommandation P70}
+
+P70 devrait introduire des campagnes de replay liees au contrat:
+
+\begin{itemize}
+  \item rejouer le contrat P69 sur plusieurs fixtures;
+  \item comparer les bytes declares et les bytes mesures;
+  \item ajouter la detection de drift contractuel;
+  \item garder les mutants P69 comme gates de non-regression;
+  \item preparer un protocole multi-machine.
+\end{itemize}
+
+\section{Conclusion}
+
+P69 repond a la question "qu'est-ce qui est stocke?" par un contrat
+procedural fini, typechecke et auditable. L'espace virtuel reste non
+materialise globalement; les couts reels du code procedural sont decomposes et
+comptes. La prochaine etape est de rejouer ce contrat dans des campagnes P70.
+
+\section{Journal d'iteration}
+
+\begin{itemize}
+  \item ajout de \Code{src/p69.rs};
+  \item ajout des commandes \Code{contract-check} et \Code{contract-run};
+  \item ajout du valid P69 et de sept invalides P69;
+  \item validation locale complete PASS;
+  \item generation du present Results LaTeX/PDF.
+\end{itemize}
+
+\end{document}
