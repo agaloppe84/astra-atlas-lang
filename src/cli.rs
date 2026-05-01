@@ -7,7 +7,8 @@ use crate::{
     p63_campaign_set_summary_json_file, p63_campaign_summary_json_file, run_workload_file,
     validate_file, write_p63_campaign_exports, write_p64_campaign_exports, DiagnosticCode,
     P63ThresholdProfile, P64GenerationPolicy, P64RatioRealishOptions, P64WorkloadKind,
-    P65ActorStrategy, P65RatioActorsOptions, WorkloadMode,
+    P65ActorCalibrationOptions, P65ActorStrategy, P65JournalPolicy, P65QueryLocality,
+    P65RatioActorsOptions, WorkloadMode,
 };
 use std::env;
 
@@ -56,6 +57,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "ratio-campaign-set-summary" => ratio_campaign_set_summary_command(args),
         "ratio-realish" => ratio_realish_command(args),
         "ratio-actors" => ratio_actors_command(args),
+        "ratio-actors-calibrate" => ratio_actors_calibrate_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -336,6 +338,24 @@ fn ratio_actors_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn ratio_actors_calibrate_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("ratio-actors-calibrate requires a .atlas path"))?;
+    let options = parse_p65_calibration_options(&args[2..])?;
+    let report = crate::p65_actor_calibration_report_file(path, options.options)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    if let Some(export_dir) = &options.export_dir {
+        crate::write_p65_actor_calibration_exports(&report, export_dir)
+            .map_err(|diagnostic| diagnostic.to_string())?;
+    }
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p65_actor_calibration_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p65_actor_calibration_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -374,6 +394,13 @@ struct P64CliOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct P65CliOptions {
     options: P65RatioActorsOptions,
+    export_dir: Option<String>,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct P65CalibrationCliOptions {
+    options: P65ActorCalibrationOptions,
     export_dir: Option<String>,
     format: OutputFormat,
 }
@@ -999,6 +1026,246 @@ fn parse_cache_value(value: &str) -> Result<bool, String> {
     }
 }
 
+fn parse_p65_calibration_options(args: &[String]) -> Result<P65CalibrationCliOptions, String> {
+    let mut workload = None;
+    let mut workload_all = false;
+    let mut mode = None;
+    let mut runs = None;
+    let mut queries = None;
+    let mut radius_grid = None;
+    let mut budget_grid = None;
+    let mut cache_grid = None;
+    let mut journal_grid = None;
+    let mut query_locality_grid = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--workload" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors-calibrate requires a value after --workload"))?;
+            let parsed = parse_p64_workload_value(value)?;
+            workload_all = parsed.is_none();
+            workload = parsed;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--workload=") {
+            let parsed = parse_p64_workload_value(value)?;
+            workload_all = parsed.is_none();
+            workload = parsed;
+            idx += 1;
+        } else if arg == "--mode" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors-calibrate requires a value after --mode"))?;
+            mode = Some(parse_mode_value(value, "ratio-actors-calibrate")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--mode=") {
+            mode = Some(parse_mode_value(value, "ratio-actors-calibrate")?);
+            idx += 1;
+        } else if arg == "--runs" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors-calibrate requires a value after --runs"))?;
+            runs = Some(parse_positive_usize(
+                value,
+                "ratio-actors-calibrate",
+                "--runs",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--runs=") {
+            runs = Some(parse_positive_usize(
+                value,
+                "ratio-actors-calibrate",
+                "--runs",
+            )?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors-calibrate requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(
+                value,
+                "ratio-actors-calibrate",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "ratio-actors-calibrate",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--radius-grid" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-actors-calibrate requires a value after --radius-grid")
+            })?;
+            radius_grid = Some(parse_usize_grid(value, "radius-grid")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--radius-grid=") {
+            radius_grid = Some(parse_usize_grid(value, "radius-grid")?);
+            idx += 1;
+        } else if arg == "--budget-grid" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-actors-calibrate requires a value after --budget-grid")
+            })?;
+            budget_grid = Some(parse_u64_grid(value, "budget-grid")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--budget-grid=") {
+            budget_grid = Some(parse_u64_grid(value, "budget-grid")?);
+            idx += 1;
+        } else if arg == "--cache-grid" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-actors-calibrate requires a value after --cache-grid")
+            })?;
+            cache_grid = Some(parse_cache_grid(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cache-grid=") {
+            cache_grid = Some(parse_cache_grid(value)?);
+            idx += 1;
+        } else if arg == "--journal-grid" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-actors-calibrate requires a value after --journal-grid")
+            })?;
+            journal_grid = Some(parse_journal_grid(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--journal-grid=") {
+            journal_grid = Some(parse_journal_grid(value)?);
+            idx += 1;
+        } else if arg == "--query-locality-grid" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-actors-calibrate requires a value after --query-locality-grid")
+            })?;
+            query_locality_grid = Some(parse_query_locality_grid(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--query-locality-grid=") {
+            query_locality_grid = Some(parse_query_locality_grid(value)?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-actors-calibrate requires a value after --export-dir")
+            })?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-actors-calibrate requires a value after --format"))?;
+            format = Some(parse_format_value(value, "ratio-actors-calibrate")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "ratio-actors-calibrate")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "ratio-actors-calibrate received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    if !workload_all && workload.is_none() {
+        return Err(usage(
+            "ratio-actors-calibrate requires --workload <name>|all",
+        ));
+    }
+
+    Ok(P65CalibrationCliOptions {
+        options: P65ActorCalibrationOptions {
+            workload,
+            mode: mode.ok_or_else(|| {
+                usage("ratio-actors-calibrate requires --mode standard|ambitious")
+            })?,
+            runs: runs.ok_or_else(|| usage("ratio-actors-calibrate requires --runs N"))?,
+            queries: queries.ok_or_else(|| usage("ratio-actors-calibrate requires --queries N"))?,
+            radius_grid: radius_grid
+                .ok_or_else(|| usage("ratio-actors-calibrate requires --radius-grid"))?,
+            budget_grid: budget_grid
+                .ok_or_else(|| usage("ratio-actors-calibrate requires --budget-grid"))?,
+            cache_grid: cache_grid
+                .ok_or_else(|| usage("ratio-actors-calibrate requires --cache-grid"))?,
+            journal_grid: journal_grid
+                .ok_or_else(|| usage("ratio-actors-calibrate requires --journal-grid"))?,
+            query_locality_grid: query_locality_grid
+                .ok_or_else(|| usage("ratio-actors-calibrate requires --query-locality-grid"))?,
+        },
+        export_dir,
+        format: format
+            .ok_or_else(|| usage("ratio-actors-calibrate requires --format json|markdown"))?,
+    })
+}
+
+fn parse_usize_grid(value: &str, name: &str) -> Result<Vec<usize>, String> {
+    let mut parsed = Vec::new();
+    for item in value.split(',') {
+        let number = parse_positive_usize(item.trim(), "ratio-actors-calibrate", name)?;
+        parsed.push(number);
+    }
+    if parsed.is_empty() {
+        return Err(usage(format!(
+            "ratio-actors-calibrate requires non-empty {}",
+            name
+        )));
+    }
+    Ok(parsed)
+}
+
+fn parse_u64_grid(value: &str, name: &str) -> Result<Vec<u64>, String> {
+    let mut parsed = Vec::new();
+    for item in value.split(',') {
+        let number = parse_positive_u64(item.trim(), "ratio-actors-calibrate", name)?;
+        parsed.push(number);
+    }
+    if parsed.is_empty() {
+        return Err(usage(format!(
+            "ratio-actors-calibrate requires non-empty {}",
+            name
+        )));
+    }
+    Ok(parsed)
+}
+
+fn parse_cache_grid(value: &str) -> Result<Vec<bool>, String> {
+    value
+        .split(',')
+        .map(|item| parse_cache_value(item.trim()))
+        .collect()
+}
+
+fn parse_journal_grid(value: &str) -> Result<Vec<P65JournalPolicy>, String> {
+    value
+        .split(',')
+        .map(|item| {
+            P65JournalPolicy::from_str(item.trim()).ok_or_else(|| {
+                usage(format!(
+                    "ratio-actors-calibrate received unsupported journal policy '{}'; expected lazy|compact",
+                    item.trim()
+                ))
+            })
+        })
+        .collect()
+}
+
+fn parse_query_locality_grid(value: &str) -> Result<Vec<P65QueryLocality>, String> {
+    value
+        .split(',')
+        .map(|item| {
+            P65QueryLocality::from_str(item.trim()).ok_or_else(|| {
+                usage(format!(
+                    "ratio-actors-calibrate received unsupported query locality '{}'; expected clustered|random|mixed",
+                    item.trim()
+                ))
+            })
+        })
+        .collect()
+}
+
 fn parse_positive_usize(value: &str, command: &str, option: &str) -> Result<usize, String> {
     let parsed = value.parse::<usize>().map_err(|_| {
         usage(format!(
@@ -1033,6 +1300,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli ratio-campaign-set-summary <registry.json> --mode smoke|standard|ambitious --threshold-profile p63 --format json [--set-name <name>]",
         "  atlas-cli ratio-realish <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --policy full-materialization|global-indexed|address-local|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N [--export-dir <path>] --format json|markdown",
         "  atlas-cli ratio-actors <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --actor-strategy no-actor|single-local|specialized-crud|over-agentic|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N --budget-bytes N [--cache on|off] [--export-dir <path>] --format json|markdown",
+        "  atlas-cli ratio-actors-calibrate <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --mode standard|ambitious --runs N --queries N --radius-grid a,b --budget-grid a,b --cache-grid off,on --journal-grid lazy,compact --query-locality-grid clustered,random,mixed [--export-dir <path>] --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

@@ -148,6 +148,33 @@ Les exports P65 vivent sous `artifacts/p65/` et restent ignores par Git. Voir
 et le rapport d'analyse
 [docs/analysis/ASTRA-P65-address-local-actor-runtime-analysis.md](docs/analysis/ASTRA-P65-address-local-actor-runtime-analysis.md).
 
+## Validation P65-2 calibration overhead acteur
+
+P65-2 ajoute `ratio-actors-calibrate` pour explorer une grille locale de
+parametres `single_local_actor`: rayon, budget, cache, journal et localite des
+requetes. Le but est d'identifier une zone Pareto sans promouvoir trop tot
+l'architecture finale.
+
+```bash
+cargo run -p atlas-cli -- ratio-actors-calibrate examples/p53_strict.atlas \
+  --workload all \
+  --mode standard \
+  --runs 30 \
+  --queries 1000 \
+  --radius-grid 1,2,3,5 \
+  --budget-grid 262144,524288,1048576,2097152 \
+  --cache-grid off,on \
+  --journal-grid lazy,compact \
+  --query-locality-grid clustered,random,mixed \
+  --export-dir artifacts/p65/calibration_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p65/` et sont ignores par Git. Voir
+[docs/validation/astra-p65-2-local-actor-overhead-calibration.md](docs/validation/astra-p65-2-local-actor-overhead-calibration.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P65-2-local-actor-overhead-calibration-analysis.md](docs/analysis/ASTRA-P65-2-local-actor-overhead-calibration-analysis.md).
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

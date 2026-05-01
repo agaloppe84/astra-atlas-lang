@@ -1,7 +1,9 @@
 use astra_atlas_lang::{
-    p64_ratio_realish_report_file, p65_ratio_actors_report_file, p65_report_json,
-    write_p65_actor_campaign_exports, P64GenerationPolicy, P64RatioRealishOptions, P64WorkloadKind,
-    P65ActorStrategy, P65Decision, P65RatioActorsOptions, WorkloadMode,
+    p64_ratio_realish_report_file, p65_actor_calibration_report_file, p65_ratio_actors_report_file,
+    p65_report_json, write_p65_actor_calibration_exports, write_p65_actor_campaign_exports,
+    P64GenerationPolicy, P64RatioRealishOptions, P64WorkloadKind, P65ActorCalibrationOptions,
+    P65ActorStrategy, P65CalibrationDecision, P65Decision, P65JournalPolicy, P65QueryLocality,
+    P65RatioActorsOptions, WorkloadMode,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -21,6 +23,20 @@ fn base_options(
         neighborhood_radius: 3,
         budget_bytes: 1_048_576,
         cache_enabled: true,
+    }
+}
+
+fn calibration_options() -> P65ActorCalibrationOptions {
+    P65ActorCalibrationOptions {
+        workload: Some(P64WorkloadKind::RealishLogEvents),
+        mode: WorkloadMode::Smoke,
+        runs: 1,
+        queries: 32,
+        radius_grid: vec![1, 2],
+        budget_grid: vec![262_144, 1_048_576],
+        cache_grid: vec![false, true],
+        journal_grid: vec![P65JournalPolicy::Lazy, P65JournalPolicy::Compact],
+        query_locality_grid: vec![P65QueryLocality::Clustered, P65QueryLocality::Random],
     }
 }
 
@@ -289,6 +305,197 @@ fn p65_keeps_p64_address_local_path_working() {
         report.decision.as_str(),
         "RECALIBRATE_P64_ADDRESS_LOCAL_RATIO_MODEL"
     );
+}
+
+#[test]
+fn p65_calibration_grid_builds_and_reports_best_configs() {
+    let report =
+        p65_actor_calibration_report_file("examples/p53_strict.atlas", calibration_options())
+            .expect("p65 calibration report");
+
+    assert_eq!(report.astra_step, "P65-2");
+    assert_eq!(
+        report.calibration_version,
+        "p65_actor_overhead_calibration_v1"
+    );
+    assert_eq!(report.configurations_tested, 32);
+    assert_eq!(report.configurations.len(), 32);
+    assert!(report.best_by_ratio.is_some());
+    assert!(report.best_by_overhead.is_some());
+    assert!(report.best_balanced.is_some());
+    assert!(!report.pareto_front.is_empty());
+    assert_eq!(
+        report.decision,
+        P65CalibrationDecision::RecalibrateP65ActorOverhead
+    );
+}
+
+#[test]
+fn p65_calibration_config_contains_actor_overhead_and_net_gain() {
+    let report =
+        p65_actor_calibration_report_file("examples/p53_strict.atlas", calibration_options())
+            .expect("p65 calibration report");
+    let config = report.best_balanced.as_ref().expect("best balanced");
+
+    assert!(config.actor_net_gain > 0.0);
+    assert!(config.actor_overhead_ratio >= 0.0);
+    assert!(config.ratio_effective_per_byte > 0.0);
+    assert!(config.bytes_per_query > 0.0);
+    assert!(config.cache_hit_rate >= 0.0);
+    assert!(config.decision != P65CalibrationDecision::PromoteP66LocalActorArchitecture);
+}
+
+#[test]
+fn p65_calibration_safety_factor_blocks_conflicts_and_stale_reads() {
+    let report = p65_actor_calibration_report_file(
+        "examples/p53_strict.atlas",
+        P65ActorCalibrationOptions {
+            workload: Some(P64WorkloadKind::RealishLogEvents),
+            mode: WorkloadMode::Smoke,
+            runs: 1,
+            queries: 32,
+            radius_grid: vec![1],
+            budget_grid: vec![262_144],
+            cache_grid: vec![false],
+            journal_grid: vec![P65JournalPolicy::Lazy],
+            query_locality_grid: vec![P65QueryLocality::Random],
+        },
+    )
+    .expect("p65 calibration report");
+    let config = report.configurations.first().expect("config");
+
+    assert!(config.conflicts > 0 || config.stale_reads > 0);
+    assert_eq!(config.balanced_score, 0.0);
+    assert_eq!(
+        config.decision,
+        P65CalibrationDecision::NoGoP65ActorOverhead
+    );
+    assert!(!config.promotion_candidate);
+}
+
+#[test]
+fn p65_calibration_high_overhead_cannot_promote() {
+    let report =
+        p65_actor_calibration_report_file("examples/p53_strict.atlas", calibration_options())
+            .expect("p65 calibration report");
+
+    for config in &report.configurations {
+        if config.actor_overhead_ratio >= 0.15
+            || config.conflicts > 0
+            || config.stale_reads > 0
+            || config.budget_refusal_rate > 0.10
+        {
+            assert!(!config.promotion_candidate);
+        }
+    }
+    assert_ne!(
+        report.decision,
+        P65CalibrationDecision::PromoteP66LocalActorArchitecture
+    );
+}
+
+#[test]
+fn p65_calibration_exports_are_written() {
+    let export_dir = unique_export_dir();
+    let report =
+        p65_actor_calibration_report_file("examples/p53_strict.atlas", calibration_options())
+            .expect("p65 calibration report");
+
+    write_p65_actor_calibration_exports(&report, &export_dir)
+        .expect("write p65 calibration exports");
+
+    assert!(export_dir
+        .join("p65_actor_calibration_report.json")
+        .exists());
+    assert!(export_dir.join("p65_actor_calibration_runs.jsonl").exists());
+    assert!(export_dir.join("p65_actor_calibration_summary.md").exists());
+    assert!(export_dir.join("p65_actor_calibration_grid.csv").exists());
+    assert_eq!(
+        fs::read_to_string(export_dir.join("p65_actor_calibration_runs.jsonl"))
+            .expect("runs")
+            .lines()
+            .count(),
+        report.configurations_tested
+    );
+
+    let _ = fs::remove_dir_all(export_dir);
+}
+
+#[test]
+fn p65_ratio_actors_calibrate_cli_succeeds() {
+    let export_dir = unique_export_dir();
+    let output = Command::new(env!("CARGO_BIN_EXE_atlas-cli"))
+        .args([
+            "ratio-actors-calibrate",
+            "examples/p53_strict.atlas",
+            "--workload",
+            "realish_log_events",
+            "--mode",
+            "smoke",
+            "--runs",
+            "1",
+            "--queries",
+            "16",
+            "--radius-grid",
+            "1,2",
+            "--budget-grid",
+            "262144,1048576",
+            "--cache-grid",
+            "off,on",
+            "--journal-grid",
+            "lazy,compact",
+            "--query-locality-grid",
+            "clustered,random",
+            "--export-dir",
+            export_dir.to_str().expect("export path"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run ratio-actors-calibrate");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"astra_step\": \"P65-2\""));
+    assert!(stdout.contains("\"calibration_version\": \"p65_actor_overhead_calibration_v1\""));
+    assert!(export_dir
+        .join("p65_actor_calibration_report.json")
+        .exists());
+
+    let _ = fs::remove_dir_all(export_dir);
+}
+
+#[test]
+fn p65_ratio_actors_calibrate_rejects_invalid_grid_value() {
+    let output = Command::new(env!("CARGO_BIN_EXE_atlas-cli"))
+        .args([
+            "ratio-actors-calibrate",
+            "examples/p53_strict.atlas",
+            "--workload",
+            "realish_log_events",
+            "--mode",
+            "smoke",
+            "--runs",
+            "1",
+            "--queries",
+            "16",
+            "--radius-grid",
+            "0",
+            "--budget-grid",
+            "262144",
+            "--cache-grid",
+            "on",
+            "--journal-grid",
+            "lazy",
+            "--query-locality-grid",
+            "clustered",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run invalid ratio-actors-calibrate");
+
+    assert!(!output.status.success());
 }
 
 fn unique_export_dir() -> PathBuf {

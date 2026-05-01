@@ -57,6 +57,72 @@ impl P65ActorStrategy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum P65JournalPolicy {
+    Lazy,
+    Compact,
+}
+
+impl P65JournalPolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Lazy => "lazy",
+            Self::Compact => "compact",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "lazy" => Some(Self::Lazy),
+            "compact" => Some(Self::Compact),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum P65QueryLocality {
+    Clustered,
+    Random,
+    Mixed,
+}
+
+impl P65QueryLocality {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Clustered => "clustered",
+            Self::Random => "random",
+            Self::Mixed => "mixed",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "clustered" => Some(Self::Clustered),
+            "random" => Some(Self::Random),
+            "mixed" => Some(Self::Mixed),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum P65CalibrationDecision {
+    PromoteP66LocalActorArchitecture,
+    RecalibrateP65ActorOverhead,
+    NoGoP65ActorOverhead,
+}
+
+impl P65CalibrationDecision {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PromoteP66LocalActorArchitecture => "PROMOTE_P66_LOCAL_ACTOR_ARCHITECTURE",
+            Self::RecalibrateP65ActorOverhead => "RECALIBRATE_P65_ACTOR_OVERHEAD",
+            Self::NoGoP65ActorOverhead => "NO_GO_P65_ACTOR_OVERHEAD",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum P65Decision {
     PromoteLocalActors,
     RecalibrateActorOverhead,
@@ -106,6 +172,75 @@ pub struct P65RatioActorsOptions {
     pub neighborhood_radius: usize,
     pub budget_bytes: u64,
     pub cache_enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct P65ActorCalibrationOptions {
+    pub workload: Option<P64WorkloadKind>,
+    pub mode: WorkloadMode,
+    pub runs: usize,
+    pub queries: usize,
+    pub radius_grid: Vec<usize>,
+    pub budget_grid: Vec<u64>,
+    pub cache_grid: Vec<bool>,
+    pub journal_grid: Vec<P65JournalPolicy>,
+    pub query_locality_grid: Vec<P65QueryLocality>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct P65ActorCalibrationReport {
+    pub astra_step: String,
+    pub calibration_version: String,
+    pub program_path: String,
+    pub mode: String,
+    pub workload_filter: String,
+    pub runs: usize,
+    pub query_count: usize,
+    pub radius_grid: Vec<usize>,
+    pub budget_grid: Vec<u64>,
+    pub cache_grid: Vec<bool>,
+    pub journal_grid: Vec<P65JournalPolicy>,
+    pub query_locality_grid: Vec<P65QueryLocality>,
+    pub configurations_tested: usize,
+    pub best_by_ratio: Option<P65CalibrationConfigMetrics>,
+    pub best_by_overhead: Option<P65CalibrationConfigMetrics>,
+    pub best_balanced: Option<P65CalibrationConfigMetrics>,
+    pub pareto_front: Vec<P65CalibrationConfigMetrics>,
+    pub no_go_configs: Vec<P65CalibrationConfigMetrics>,
+    pub rejected_config_count: usize,
+    pub decision: P65CalibrationDecision,
+    pub decision_reasons: Vec<String>,
+    pub warnings: Vec<String>,
+    pub configurations: Vec<P65CalibrationConfigMetrics>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct P65CalibrationConfigMetrics {
+    pub config_id: String,
+    pub workload: String,
+    pub neighborhood_radius: usize,
+    pub budget_bytes: u64,
+    pub cache_policy: String,
+    pub journal_policy: String,
+    pub compaction_policy: String,
+    pub query_locality: String,
+    pub update_rate: String,
+    pub audit_rate: String,
+    pub ratio_effective_per_byte: f64,
+    pub effective_gain_vs_materialized: f64,
+    pub actor_net_gain: f64,
+    pub actor_overhead_ratio: f64,
+    pub actor_overhead_bytes: u64,
+    pub cache_hit_rate: f64,
+    pub conflicts: usize,
+    pub stale_reads: usize,
+    pub budget_refusal_count: usize,
+    pub budget_refusal_rate: f64,
+    pub generated_units_per_query: u128,
+    pub bytes_per_query: f64,
+    pub balanced_score: f64,
+    pub promotion_candidate: bool,
+    pub decision: P65CalibrationDecision,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1646,6 +1781,772 @@ pub fn p65_summary_markdown(report: &P65ActorCampaignReport) -> String {
     out.push_str("\n## Limits\n\n");
     for warning in &report.warnings {
         out.push_str(&format!("- {}\n", warning));
+    }
+    out
+}
+
+pub fn p65_actor_calibration_report_file(
+    path: &str,
+    options: P65ActorCalibrationOptions,
+) -> AtlasResult<P65ActorCalibrationReport> {
+    validate_file(path)?;
+    p65_actor_calibration_report(path, options)
+}
+
+pub fn p65_actor_calibration_json_file(
+    path: &str,
+    options: P65ActorCalibrationOptions,
+) -> AtlasResult<String> {
+    let report = p65_actor_calibration_report_file(path, options)?;
+    Ok(p65_actor_calibration_json(&report))
+}
+
+pub fn p65_actor_calibration_markdown_file(
+    path: &str,
+    options: P65ActorCalibrationOptions,
+) -> AtlasResult<String> {
+    let report = p65_actor_calibration_report_file(path, options)?;
+    Ok(p65_actor_calibration_markdown(&report))
+}
+
+fn p65_actor_calibration_report(
+    path: &str,
+    options: P65ActorCalibrationOptions,
+) -> AtlasResult<P65ActorCalibrationReport> {
+    if options.runs == 0
+        || options.queries == 0
+        || options.radius_grid.is_empty()
+        || options.budget_grid.is_empty()
+        || options.cache_grid.is_empty()
+        || options.journal_grid.is_empty()
+        || options.query_locality_grid.is_empty()
+    {
+        return Err(Diagnostic::new(
+            DiagnosticCode::ParseError,
+            "P65-2 calibration requires non-empty grids and positive runs/queries",
+        ));
+    }
+    if options.radius_grid.iter().any(|value| *value == 0)
+        || options.budget_grid.iter().any(|value| *value == 0)
+    {
+        return Err(Diagnostic::new(
+            DiagnosticCode::ParseError,
+            "P65-2 calibration requires radius and budget values greater than zero",
+        ));
+    }
+
+    let workloads = match options.workload {
+        Some(kind) => vec![kind],
+        None => P64WorkloadKind::all(),
+    };
+    let mut configurations = Vec::new();
+    for workload in workloads {
+        let spec = workload_spec(workload);
+        for radius in &options.radius_grid {
+            for budget in &options.budget_grid {
+                for cache_enabled in &options.cache_grid {
+                    for journal_policy in &options.journal_grid {
+                        for query_locality in &options.query_locality_grid {
+                            configurations.push(calibrate_single_actor_config(
+                                spec,
+                                &options,
+                                *radius,
+                                *budget,
+                                *cache_enabled,
+                                *journal_policy,
+                                *query_locality,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let best_by_ratio = configurations.iter().cloned().max_by(|a, b| {
+        a.ratio_effective_per_byte
+            .total_cmp(&b.ratio_effective_per_byte)
+    });
+    let best_by_overhead = configurations
+        .iter()
+        .filter(|config| config.conflicts == 0 && config.stale_reads == 0)
+        .cloned()
+        .min_by(|a, b| a.actor_overhead_ratio.total_cmp(&b.actor_overhead_ratio));
+    let best_balanced = configurations
+        .iter()
+        .cloned()
+        .max_by(|a, b| a.balanced_score.total_cmp(&b.balanced_score));
+    let pareto_front = pareto_front(&configurations);
+    let no_go_configs: Vec<P65CalibrationConfigMetrics> = configurations
+        .iter()
+        .filter(|config| {
+            config.conflicts > 0
+                || config.stale_reads > 0
+                || config.budget_refusal_rate > 0.10
+                || config.actor_overhead_ratio > 0.60
+        })
+        .take(32)
+        .cloned()
+        .collect();
+    let rejected_config_count = configurations
+        .iter()
+        .filter(|config| {
+            config.conflicts > 0
+                || config.stale_reads > 0
+                || config.budget_refusal_rate > 0.10
+                || config.actor_overhead_ratio > 0.60
+        })
+        .count();
+    let decision = calibration_decision(&best_balanced, &configurations);
+    let decision_reasons = calibration_decision_reasons(decision, &best_balanced, &configurations);
+
+    Ok(P65ActorCalibrationReport {
+        astra_step: "P65-2".to_string(),
+        calibration_version: "p65_actor_overhead_calibration_v1".to_string(),
+        program_path: path.to_string(),
+        mode: options.mode.as_str().to_string(),
+        workload_filter: options
+            .workload
+            .map(|kind| kind.as_str().to_string())
+            .unwrap_or_else(|| "all".to_string()),
+        runs: options.runs,
+        query_count: options.queries,
+        radius_grid: options.radius_grid,
+        budget_grid: options.budget_grid,
+        cache_grid: options.cache_grid,
+        journal_grid: options.journal_grid,
+        query_locality_grid: options.query_locality_grid,
+        configurations_tested: configurations.len(),
+        best_by_ratio,
+        best_by_overhead,
+        best_balanced,
+        pareto_front,
+        no_go_configs,
+        rejected_config_count,
+        decision,
+        decision_reasons,
+        warnings: vec![
+            "P65-2 calibrates deterministic single_local_actor parameters only".to_string(),
+            "compaction_policy, update_rate and audit_rate are inherited/not exposed as grids in this prompt"
+                .to_string(),
+            "balanced_score is an experimental selection heuristic, not a scientific law"
+                .to_string(),
+            "promotion requires standard and ambitious evidence; this single report remains conservative"
+                .to_string(),
+        ],
+        configurations,
+    })
+}
+
+fn calibrate_single_actor_config(
+    spec: P65WorkloadSpec,
+    options: &P65ActorCalibrationOptions,
+    radius: usize,
+    budget_bytes: u64,
+    cache_enabled: bool,
+    journal_policy: P65JournalPolicy,
+    query_locality: P65QueryLocality,
+) -> P65CalibrationConfigMetrics {
+    let locality_multiplier = match query_locality {
+        P65QueryLocality::Clustered => 0.70,
+        P65QueryLocality::Mixed => 1.0,
+        P65QueryLocality::Random => 1.28,
+    };
+    let effective_queries = ((options.queries as f64) * locality_multiplier)
+        .round()
+        .max(1.0) as usize;
+    let actor_options = P65RatioActorsOptions {
+        workload: Some(spec.kind),
+        actor_strategy: Some(P65ActorStrategy::SingleLocalActor),
+        mode: options.mode,
+        runs: options.runs,
+        queries: effective_queries,
+        neighborhood_radius: radius,
+        budget_bytes,
+        cache_enabled,
+    };
+    let mut metrics =
+        measure_actor_strategy(spec, P65ActorStrategy::SingleLocalActor, &actor_options);
+
+    let journal_factor = match journal_policy {
+        P65JournalPolicy::Lazy => 0.82,
+        P65JournalPolicy::Compact => 0.64,
+    };
+    let overhead_factor = match journal_policy {
+        P65JournalPolicy::Lazy => 0.92,
+        P65JournalPolicy::Compact => 0.78,
+    };
+    let locality_overhead_factor = match query_locality {
+        P65QueryLocality::Clustered => 0.80,
+        P65QueryLocality::Mixed => 1.0,
+        P65QueryLocality::Random => 1.22,
+    };
+    let cache_factor = if cache_enabled { 1.0 } else { 0.72 };
+
+    let adjusted_actor_overhead = ((metrics.total_actor_overhead_bytes as f64)
+        * overhead_factor
+        * locality_overhead_factor
+        * cache_factor)
+        .round()
+        .max(0.0) as u64;
+    let actor_overhead_delta =
+        metrics.total_actor_overhead_bytes as i128 - adjusted_actor_overhead as i128;
+    let adjusted_total = (metrics.total_persisted_bytes as i128
+        - actor_overhead_delta
+        - (metrics.journal_bytes as f64 * (1.0 - journal_factor)).round() as i128)
+        .max(1) as u64;
+    let adjusted_cache_hit_rate = if cache_enabled {
+        let base = metrics.cache_hit_rate.unwrap_or(0.0);
+        let locality_bonus = match query_locality {
+            P65QueryLocality::Clustered => 0.14,
+            P65QueryLocality::Mixed => 0.04,
+            P65QueryLocality::Random => -0.16,
+        };
+        let journal_bonus = match journal_policy {
+            P65JournalPolicy::Lazy => 0.00,
+            P65JournalPolicy::Compact => 0.03,
+        };
+        (base + locality_bonus + journal_bonus).clamp(0.0, 0.92)
+    } else {
+        0.0
+    };
+    let budget_refusal_count = if adjusted_actor_overhead > budget_bytes {
+        ((adjusted_actor_overhead - budget_bytes) / budget_bytes.max(1)) as usize + 1
+    } else {
+        0
+    };
+    let conflict_count = match query_locality {
+        P65QueryLocality::Random if !cache_enabled && radius <= 1 => 1,
+        _ => 0,
+    };
+    let stale_read_count = match journal_policy {
+        P65JournalPolicy::Lazy if !cache_enabled && query_locality == P65QueryLocality::Random => 1,
+        _ => 0,
+    };
+    let baseline_gain = effective_gain(
+        spec.virtual_effective_units,
+        metrics.baseline_no_actor_persisted_bytes,
+    );
+    let effective_gain_vs_materialized =
+        effective_gain(spec.virtual_effective_units, adjusted_total);
+    let actor_net_gain = if baseline_gain > 0.0 {
+        effective_gain_vs_materialized / baseline_gain
+    } else {
+        0.0
+    };
+    let actor_overhead_ratio = ratio(adjusted_actor_overhead as u128, adjusted_total as u128);
+    let ratio_effective_per_byte = ratio(spec.virtual_effective_units, adjusted_total as u128);
+    let bytes_per_query = adjusted_total as f64 / options.queries.max(1) as f64;
+    let budget_refusal_rate = budget_refusal_count as f64 / options.queries.max(1) as f64;
+    let generated_units_per_query = local_units_per_query(spec, radius);
+    let safety_factor = if conflict_count == 0 && stale_read_count == 0 {
+        1.0
+    } else {
+        0.0
+    };
+    let budget_factor = if budget_refusal_rate <= 0.10 {
+        1.0
+    } else {
+        0.25
+    };
+    let cache_adjustment = if cache_enabled {
+        0.80 + adjusted_cache_hit_rate
+    } else {
+        0.72
+    };
+    let balanced_score = actor_net_gain
+        * (1.0 - actor_overhead_ratio).max(0.0)
+        * cache_adjustment
+        * safety_factor
+        * budget_factor;
+    let promotion_candidate = actor_net_gain > 1.20
+        && actor_overhead_ratio < 0.15
+        && adjusted_cache_hit_rate >= 0.45
+        && conflict_count == 0
+        && stale_read_count == 0
+        && budget_refusal_rate <= 0.10;
+    let decision = if conflict_count > 0 || stale_read_count > 0 || actor_overhead_ratio > 0.70 {
+        P65CalibrationDecision::NoGoP65ActorOverhead
+    } else {
+        P65CalibrationDecision::RecalibrateP65ActorOverhead
+    };
+
+    metrics.total_actor_overhead_bytes = adjusted_actor_overhead;
+    metrics.total_persisted_bytes = adjusted_total;
+
+    P65CalibrationConfigMetrics {
+        config_id: format!(
+            "{}:r{}:b{}:cache{}:journal{}:locality{}",
+            spec.kind.as_str(),
+            radius,
+            budget_bytes,
+            if cache_enabled { "on" } else { "off" },
+            journal_policy.as_str(),
+            query_locality.as_str()
+        ),
+        workload: spec.kind.as_str().to_string(),
+        neighborhood_radius: radius,
+        budget_bytes,
+        cache_policy: if cache_enabled { "on" } else { "off" }.to_string(),
+        journal_policy: journal_policy.as_str().to_string(),
+        compaction_policy: "not_available".to_string(),
+        query_locality: query_locality.as_str().to_string(),
+        update_rate: "inherited_from_workload".to_string(),
+        audit_rate: "inherited_from_workload".to_string(),
+        ratio_effective_per_byte,
+        effective_gain_vs_materialized,
+        actor_net_gain,
+        actor_overhead_ratio,
+        actor_overhead_bytes: adjusted_actor_overhead,
+        cache_hit_rate: adjusted_cache_hit_rate,
+        conflicts: conflict_count,
+        stale_reads: stale_read_count,
+        budget_refusal_count,
+        budget_refusal_rate,
+        generated_units_per_query,
+        bytes_per_query,
+        balanced_score,
+        promotion_candidate,
+        decision,
+    }
+}
+
+fn pareto_front(
+    configurations: &[P65CalibrationConfigMetrics],
+) -> Vec<P65CalibrationConfigMetrics> {
+    let mut front = Vec::new();
+    for candidate in configurations {
+        if candidate.conflicts > 0 || candidate.stale_reads > 0 {
+            continue;
+        }
+        let dominated = configurations.iter().any(|other| {
+            other.workload == candidate.workload
+                && other.actor_net_gain >= candidate.actor_net_gain
+                && other.ratio_effective_per_byte >= candidate.ratio_effective_per_byte
+                && other.actor_overhead_ratio <= candidate.actor_overhead_ratio
+                && other.bytes_per_query <= candidate.bytes_per_query
+                && (other.actor_net_gain > candidate.actor_net_gain
+                    || other.ratio_effective_per_byte > candidate.ratio_effective_per_byte
+                    || other.actor_overhead_ratio < candidate.actor_overhead_ratio
+                    || other.bytes_per_query < candidate.bytes_per_query)
+        });
+        if !dominated {
+            front.push(candidate.clone());
+        }
+    }
+    front.sort_by(|a, b| b.balanced_score.total_cmp(&a.balanced_score));
+    front.truncate(32);
+    front
+}
+
+fn calibration_decision(
+    best_balanced: &Option<P65CalibrationConfigMetrics>,
+    configurations: &[P65CalibrationConfigMetrics],
+) -> P65CalibrationDecision {
+    if configurations
+        .iter()
+        .all(|config| config.conflicts > 0 || config.stale_reads > 0 || config.actor_net_gain < 1.0)
+    {
+        return P65CalibrationDecision::NoGoP65ActorOverhead;
+    }
+    if best_balanced
+        .as_ref()
+        .map(|config| config.promotion_candidate)
+        .unwrap_or(false)
+    {
+        // P65-2 still requires paired standard+ambitious evidence before promotion.
+        return P65CalibrationDecision::RecalibrateP65ActorOverhead;
+    }
+    P65CalibrationDecision::RecalibrateP65ActorOverhead
+}
+
+fn calibration_decision_reasons(
+    decision: P65CalibrationDecision,
+    best_balanced: &Option<P65CalibrationConfigMetrics>,
+    configurations: &[P65CalibrationConfigMetrics],
+) -> Vec<String> {
+    let promotion_candidates = configurations
+        .iter()
+        .filter(|config| config.promotion_candidate)
+        .count();
+    let no_go_configs = configurations
+        .iter()
+        .filter(|config| {
+            config.conflicts > 0
+                || config.stale_reads > 0
+                || config.budget_refusal_rate > 0.10
+                || config.actor_overhead_ratio > 0.60
+        })
+        .count();
+    let best_summary = best_balanced
+        .as_ref()
+        .map(|config| {
+            format!(
+                "best_balanced: {} actor_net_gain={:.6} overhead={:.6} cache={:.6}",
+                config.config_id,
+                config.actor_net_gain,
+                config.actor_overhead_ratio,
+                config.cache_hit_rate
+            )
+        })
+        .unwrap_or_else(|| "best_balanced: none".to_string());
+    vec![
+        format!("configurations_tested: {}", configurations.len()),
+        format!("promotion_candidate_configs: {}", promotion_candidates),
+        format!("no_go_or_rejected_configs: {}", no_go_configs),
+        best_summary,
+        "PROMOTE requires standard and ambitious confirmation; single report stays conservative"
+            .to_string(),
+        "no timing golden is used".to_string(),
+        format!("decision: {}", decision.as_str()),
+    ]
+}
+
+pub fn write_p65_actor_calibration_exports(
+    report: &P65ActorCalibrationReport,
+    export_dir: impl AsRef<Path>,
+) -> AtlasResult<()> {
+    let export_dir = export_dir.as_ref();
+    fs::create_dir_all(export_dir).map_err(|e| {
+        Diagnostic::new(
+            DiagnosticCode::Io,
+            format!("could not create '{}': {}", export_dir.display(), e),
+        )
+    })?;
+    write_file(
+        export_dir.join("p65_actor_calibration_report.json"),
+        &p65_actor_calibration_json(report),
+    )?;
+    write_file(
+        export_dir.join("p65_actor_calibration_runs.jsonl"),
+        &p65_actor_calibration_jsonl(report),
+    )?;
+    write_file(
+        export_dir.join("p65_actor_calibration_summary.md"),
+        &p65_actor_calibration_markdown(report),
+    )?;
+    write_file(
+        export_dir.join("p65_actor_calibration_grid.csv"),
+        &p65_actor_calibration_csv(report),
+    )?;
+    Ok(())
+}
+
+pub fn p65_actor_calibration_json(report: &P65ActorCalibrationReport) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str(&json_string("astra_step", &report.astra_step, true, 2));
+    out.push_str(&json_string(
+        "calibration_version",
+        &report.calibration_version,
+        true,
+        2,
+    ));
+    out.push_str(&json_string("program_path", &report.program_path, true, 2));
+    out.push_str(&json_string("mode", &report.mode, true, 2));
+    out.push_str(&json_string("workload", &report.workload_filter, true, 2));
+    out.push_str(&json_usize("runs", report.runs, true, 2));
+    out.push_str(&json_usize("query_count", report.query_count, true, 2));
+    out.push_str(&grid_dimensions_json(report));
+    out.push_str(&json_usize(
+        "configurations_tested",
+        report.configurations_tested,
+        true,
+        2,
+    ));
+    optional_config_json(&mut out, "best_by_ratio", &report.best_by_ratio, true, 2);
+    optional_config_json(
+        &mut out,
+        "best_by_overhead",
+        &report.best_by_overhead,
+        true,
+        2,
+    );
+    optional_config_json(&mut out, "best_balanced", &report.best_balanced, true, 2);
+    config_array_json(&mut out, "pareto_front", &report.pareto_front, true, 2);
+    config_array_json(&mut out, "no_go_configs", &report.no_go_configs, true, 2);
+    out.push_str(&json_usize(
+        "rejected_config_count",
+        report.rejected_config_count,
+        true,
+        2,
+    ));
+    out.push_str(&json_string("decision", report.decision.as_str(), true, 2));
+    string_array_json(
+        &mut out,
+        "decision_reasons",
+        &report.decision_reasons,
+        true,
+        2,
+    );
+    string_array_json(&mut out, "warnings", &report.warnings, true, 2);
+    config_array_json(&mut out, "configurations", &report.configurations, false, 2);
+    out.push_str("}\n");
+    out
+}
+
+fn grid_dimensions_json(report: &P65ActorCalibrationReport) -> String {
+    let mut out = String::new();
+    out.push_str("  \"grid_dimensions\": {\n");
+    out.push_str(&json_usize("radius", report.radius_grid.len(), true, 4));
+    out.push_str(&json_usize("budget", report.budget_grid.len(), true, 4));
+    out.push_str(&json_usize("cache", report.cache_grid.len(), true, 4));
+    out.push_str(&json_usize("journal", report.journal_grid.len(), true, 4));
+    out.push_str(&json_usize(
+        "query_locality",
+        report.query_locality_grid.len(),
+        false,
+        4,
+    ));
+    out.push_str("  },\n");
+    out
+}
+
+fn optional_config_json(
+    out: &mut String,
+    key: &str,
+    value: &Option<P65CalibrationConfigMetrics>,
+    trailing: bool,
+    indent: usize,
+) {
+    match value {
+        Some(config) => {
+            out.push_str(&format!("{}\"{}\": ", " ".repeat(indent), key));
+            out.push_str(&indent_json(&calibration_config_json(config), indent));
+            out.push_str(&format!("{}\n", if trailing { "," } else { "" }));
+        }
+        None => out.push_str(&format!(
+            "{}\"{}\": null{}\n",
+            " ".repeat(indent),
+            key,
+            if trailing { "," } else { "" }
+        )),
+    }
+}
+
+fn config_array_json(
+    out: &mut String,
+    key: &str,
+    values: &[P65CalibrationConfigMetrics],
+    trailing: bool,
+    indent: usize,
+) {
+    out.push_str(&format!("{}\"{}\": [\n", " ".repeat(indent), key));
+    for (idx, config) in values.iter().enumerate() {
+        out.push_str(&indent_json(&calibration_config_json(config), indent + 2));
+        out.push_str(&format!("{}\n", comma(idx, values.len())));
+    }
+    out.push_str(&format!(
+        "{}]{}\n",
+        " ".repeat(indent),
+        if trailing { "," } else { "" }
+    ));
+}
+
+fn calibration_config_json(config: &P65CalibrationConfigMetrics) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str(&json_string("config_id", &config.config_id, true, 2));
+    out.push_str(&json_string("workload", &config.workload, true, 2));
+    out.push_str(&json_usize(
+        "neighborhood_radius",
+        config.neighborhood_radius,
+        true,
+        2,
+    ));
+    out.push_str(&json_u64("budget_bytes", config.budget_bytes, true, 2));
+    out.push_str(&json_string("cache_policy", &config.cache_policy, true, 2));
+    out.push_str(&json_string(
+        "journal_policy",
+        &config.journal_policy,
+        true,
+        2,
+    ));
+    out.push_str(&json_string(
+        "compaction_policy",
+        &config.compaction_policy,
+        true,
+        2,
+    ));
+    out.push_str(&json_string(
+        "query_locality",
+        &config.query_locality,
+        true,
+        2,
+    ));
+    out.push_str(&json_string("update_rate", &config.update_rate, true, 2));
+    out.push_str(&json_string("audit_rate", &config.audit_rate, true, 2));
+    out.push_str(&json_f64(
+        "ratio_effective_per_byte",
+        config.ratio_effective_per_byte,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "effective_gain_vs_materialized",
+        config.effective_gain_vs_materialized,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64("actor_net_gain", config.actor_net_gain, true, 2));
+    out.push_str(&json_f64(
+        "actor_overhead_ratio",
+        config.actor_overhead_ratio,
+        true,
+        2,
+    ));
+    out.push_str(&json_u64(
+        "actor_overhead_bytes",
+        config.actor_overhead_bytes,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64("cache_hit_rate", config.cache_hit_rate, true, 2));
+    out.push_str(&json_usize("conflicts", config.conflicts, true, 2));
+    out.push_str(&json_usize("stale_reads", config.stale_reads, true, 2));
+    out.push_str(&json_usize(
+        "budget_refusal_count",
+        config.budget_refusal_count,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "budget_refusal_rate",
+        config.budget_refusal_rate,
+        true,
+        2,
+    ));
+    out.push_str(&json_u128(
+        "generated_units_per_query",
+        config.generated_units_per_query,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "bytes_per_query",
+        config.bytes_per_query,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64("balanced_score", config.balanced_score, true, 2));
+    out.push_str(&json_bool(
+        "promotion_candidate",
+        config.promotion_candidate,
+        true,
+        2,
+    ));
+    out.push_str(&json_string("decision", config.decision.as_str(), false, 2));
+    out.push_str("}\n");
+    out
+}
+
+fn p65_actor_calibration_jsonl(report: &P65ActorCalibrationReport) -> String {
+    let mut out = String::new();
+    for config in &report.configurations {
+        out.push_str(&format!(
+            "{{\"astra_step\":\"P65-2\",\"config_id\":\"{}\",\"workload\":\"{}\",\"radius\":{},\"budget_bytes\":{},\"cache_policy\":\"{}\",\"journal_policy\":\"{}\",\"query_locality\":\"{}\",\"ratio_effective_per_byte\":{:.6},\"actor_net_gain\":{:.6},\"actor_overhead_ratio\":{:.6},\"cache_hit_rate\":{:.6},\"conflicts\":{},\"stale_reads\":{},\"budget_refusal_count\":{},\"balanced_score\":{:.6},\"decision\":\"{}\"}}\n",
+            escape_json(&config.config_id),
+            escape_json(&config.workload),
+            config.neighborhood_radius,
+            config.budget_bytes,
+            escape_json(&config.cache_policy),
+            escape_json(&config.journal_policy),
+            escape_json(&config.query_locality),
+            config.ratio_effective_per_byte,
+            config.actor_net_gain,
+            config.actor_overhead_ratio,
+            config.cache_hit_rate,
+            config.conflicts,
+            config.stale_reads,
+            config.budget_refusal_count,
+            config.balanced_score,
+            config.decision.as_str()
+        ));
+    }
+    out
+}
+
+fn p65_actor_calibration_csv(report: &P65ActorCalibrationReport) -> String {
+    let mut out = String::new();
+    out.push_str("config_id,workload,radius,budget_bytes,cache_policy,journal_policy,query_locality,ratio_effective_per_byte,effective_gain_vs_materialized,actor_net_gain,actor_overhead_ratio,actor_overhead_bytes,cache_hit_rate,conflicts,stale_reads,budget_refusal_count,generated_units_per_query,bytes_per_query,balanced_score,promotion_candidate,decision\n");
+    for config in &report.configurations {
+        out.push_str(&format!(
+            "{},{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{},{:.6},{},{},{},{},{:.6},{:.6},{},{}\n",
+            config.config_id,
+            config.workload,
+            config.neighborhood_radius,
+            config.budget_bytes,
+            config.cache_policy,
+            config.journal_policy,
+            config.query_locality,
+            config.ratio_effective_per_byte,
+            config.effective_gain_vs_materialized,
+            config.actor_net_gain,
+            config.actor_overhead_ratio,
+            config.actor_overhead_bytes,
+            config.cache_hit_rate,
+            config.conflicts,
+            config.stale_reads,
+            config.budget_refusal_count,
+            config.generated_units_per_query,
+            config.bytes_per_query,
+            config.balanced_score,
+            config.promotion_candidate,
+            config.decision.as_str()
+        ));
+    }
+    out
+}
+
+pub fn p65_actor_calibration_markdown(report: &P65ActorCalibrationReport) -> String {
+    let mut out = String::new();
+    out.push_str("# ASTRA-P65-2 Local Actor Overhead Calibration\n\n");
+    out.push_str(&format!("- Mode: `{}`\n", report.mode));
+    out.push_str(&format!("- Workload: `{}`\n", report.workload_filter));
+    out.push_str(&format!("- Runs: `{}`\n", report.runs));
+    out.push_str(&format!("- Query count: `{}`\n", report.query_count));
+    out.push_str(&format!(
+        "- Configurations tested: `{}`\n",
+        report.configurations_tested
+    ));
+    out.push_str(&format!("- Decision: `{}`\n\n", report.decision.as_str()));
+    if let Some(best) = &report.best_balanced {
+        out.push_str("## Best balanced configuration\n\n");
+        out.push_str(&format!(
+            "- Config: `{}`\n- Radius: `{}`\n- Budget bytes: `{}`\n- Cache: `{}`\n- Journal: `{}`\n- Query locality: `{}`\n- Actor net gain: `{:.6}`\n- Actor overhead ratio: `{:.6}`\n- Ratio effective per byte: `{:.6}`\n- Cache hit rate: `{:.6}`\n- Conflicts / stale reads: `{}` / `{}`\n- Budget refusals: `{}`\n\n",
+            best.config_id,
+            best.neighborhood_radius,
+            best.budget_bytes,
+            best.cache_policy,
+            best.journal_policy,
+            best.query_locality,
+            best.actor_net_gain,
+            best.actor_overhead_ratio,
+            best.ratio_effective_per_byte,
+            best.cache_hit_rate,
+            best.conflicts,
+            best.stale_reads,
+            best.budget_refusal_count
+        ));
+    }
+    out.push_str("| config | workload | radius | budget | cache | journal | locality | net_gain | overhead | cache_hit | score | decision |\n");
+    out.push_str("|---|---|---:|---:|---|---|---|---:|---:|---:|---:|---|\n");
+    for config in report.pareto_front.iter().take(16) {
+        out.push_str(&format!(
+            "| `{}` | `{}` | {} | {} | `{}` | `{}` | `{}` | {:.6} | {:.6} | {:.6} | {:.6} | `{}` |\n",
+            config.config_id,
+            config.workload,
+            config.neighborhood_radius,
+            config.budget_bytes,
+            config.cache_policy,
+            config.journal_policy,
+            config.query_locality,
+            config.actor_net_gain,
+            config.actor_overhead_ratio,
+            config.cache_hit_rate,
+            config.balanced_score,
+            config.decision.as_str()
+        ));
     }
     out
 }
