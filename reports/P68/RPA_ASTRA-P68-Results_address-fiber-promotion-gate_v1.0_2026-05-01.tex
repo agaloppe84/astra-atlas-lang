@@ -1,0 +1,293 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P68 Results -- Address-Fiber Promotion Gate},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+\emergencystretch=3em
+\sloppy
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+\newcommand{\NA}{\textit{n/a}}
+
+\title{\textbf{ASTRA-P68 Results}\\Address-Fiber Promotion Gate}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P68 du repo \Code{astra-atlas-lang}. La trace
+vivante reste le rapport Markdown d'analyse P68. Ce document \LaTeX{}/PDF est
+le livrable Results fig\'e pour la promotion gate \Code{address-fiber}. Aucun
+r\'esultat nouveau n'est invent\'e ici.
+\end{abstract}
+
+\section{But de ASTRA-P68}
+
+P68 transforme le signal P67 en d\'ecision architecturale robuste. Le sprint
+ajoute un \Code{PromotionEvaluator} pairant un candidat standard et un candidat
+ambitious, puis v\'erifie des gates stricts de gain, overhead, s\^uret\'e,
+compatibilit\'e et comptabilisation CRUD/audit/compaction.
+
+\section{Position apr\`es P67}
+
+P67 avait trouv\'e une zone candidate forte:
+
+\begin{itemize}
+  \item standard: \Code{address_fiber_net_gain = 17.379955},
+    \Code{avg_actor_overhead_ratio = 0.123446};
+  \item ambitious: \Code{address_fiber_net_gain = 13.335472},
+    \Code{avg_actor_overhead_ratio = 0.119345};
+  \item conflits / stale reads / budget refusals: 0 / 0 / 0.
+\end{itemize}
+
+P67 restait toutefois en
+\Decision{RECALIBRATE_P67_FIBER_OVERHEAD}, car la promotion exigeait une gate
+pair\'ee standard + ambitious.
+
+\section{Hypoth\`ese de promotion}
+
+\Code{address_fiber_actor_managed_v1} devient candidat principal P69 si:
+
+\begin{itemize}
+  \item standard passe \Code{overhead < 0.15} et \Code{net_gain > 3.0};
+  \item ambitious passe \Code{overhead < 0.18} et \Code{net_gain > 3.0};
+  \item les candidats sont compatibles;
+  \item conflits et stale reads restent nuls;
+  \item les refus budgetaires restent sous 0.02;
+  \item update, audit et compaction sont comptes.
+\end{itemize}
+
+\section{PromotionEvaluator}
+
+Le \Code{PromotionEvaluator} produit:
+
+\begin{itemize}
+  \item \Code{standard_gate_status};
+  \item \Code{ambitious_gate_status};
+  \item \Code{pairing_status};
+  \item \Code{promotion_score};
+  \item \Code{passed_gates} et \Code{failed_gates};
+  \item \Code{promotion_decision}.
+\end{itemize}
+
+\section{Ablations}
+
+P68 ajoute des ablations causales locales:
+
+\begin{itemize}
+  \item cache off vs cache compact;
+  \item journal lazy vs journal compact;
+  \item audit sampled vs minimal;
+  \item compaction off vs aggressive;
+  \item metadata verbose vs standard;
+  \item actor off vs actor-managed fiber;
+  \item point fiber vs actor-managed fiber;
+  \item projection medium vs shallow.
+\end{itemize}
+
+Ces contributions expliquent le protocole local. Elles ne sont pas presentees
+comme lois scientifiques generales.
+
+\section{Stress cibl\'es}
+
+P68 teste douze stress: locality clustered/random/mixed/hotspot,
+high-update, high-audit, metadata verbose, small budget, large radius, cache
+churn, journal pressure et local/global conflict.
+
+Les stress volontairement hors-classe peuvent retourner \Code{NO_GO} si le
+refus est propre. La promotion exige qu'aucun stress raisonnable in-class ne
+produise \Code{NO_GO}.
+
+\section{Carte de phase}
+
+La carte de phase P68 explore radius, budget, cache et journal:
+
+\begin{itemize}
+  \item \Code{GREEN_PROMOTABLE}: 8 cellules;
+  \item \Code{YELLOW_RECALIBRATE}: 29 cellules;
+  \item \Code{RED_NO_GO}: 11 cellules;
+  \item \Code{GREY_NOT_TESTED}: 0 cellule.
+\end{itemize}
+
+Meilleure cellule verte:
+\Code{r1:b4194304:cachecompact:journalcompact}.
+
+\section{Comparaison historique P64-P68}
+
+\begin{longtable}{@{}p{0.08\linewidth}p{0.20\linewidth}p{0.12\linewidth}p{0.10\linewidth}p{0.11\linewidth}p{0.27\linewidth}@{}}
+\toprule
+Step & Architecture & Ratio/byte & Net gain & Overhead & Note \\
+\midrule
+\endhead
+P64 & address-local & 1.506940 & \NA & \NA & address-local bat full/global \\
+P65 & single actor & 2.001853 & 1.328400 & 0.212592 & acteur local utile mais overhead haut \\
+P66 & actor fiber & 6.015642 & 4.375208 & 0.294461 & fibre utile, overhead haut \\
+P67 & calibrated fiber & 30.068052 & 17.379955 & 0.123446 & candidat calibre \\
+P68 & promoted gate & 30.068052 & 17.379955 & 0.123446 & gate pair\'ee promue \\
+\bottomrule
+\end{longtable}
+
+\section{Architecture Manifest}
+
+Le manifeste compact P68 fixe:
+
+\begin{itemize}
+  \item \Code{architecture_id}: \Code{address_fiber_actor_managed_v1};
+  \item status: \Code{promoted_for_p69};
+  \item default radius: 1;
+  \item default budget bytes: 4194304;
+  \item cache / journal / audit: compact / compact / minimal;
+  \item projection: shallow;
+  \item overhead range attendu: 0.119345--0.123446;
+  \item net gain range attendu: 13.335472--17.379955.
+\end{itemize}
+
+\section{Validation locale}
+
+\begin{longtable}{@{}p{0.48\linewidth}p{0.15\linewidth}p{0.27\linewidth}@{}}
+\toprule
+Commande & Statut & Sortie importante \\
+\midrule
+\endhead
+\Code{cargo fmt --all -- --check} & PASS & formatage OK \\
+\Code{cargo build --workspace} & PASS & workspace build OK \\
+\Code{cargo test --workspace} & PASS & suite complete OK \\
+\Code{cargo test --test p68_tests} & PASS & 9 tests passes \\
+\Code{cargo test --test p67_tests} & PASS & non-regression P67 OK \\
+\Code{bash scripts/validate_p58_local.sh} & PASS & validation locale stricte OK \\
+\bottomrule
+\end{longtable}
+
+\section{Promotion gate results}
+
+\begin{longtable}{@{}p{0.38\linewidth}p{0.52\linewidth}@{}}
+\toprule
+Champ & Valeur \\
+\midrule
+\endhead
+Standard candidate & hybrid, r1, budget 4194304, cache compact, journal compact, audit minimal, compaction aggressive, clustered, shallow \\
+Ambitious candidate & hybrid, r2, budget 4194304, cache compact, journal compact, audit minimal, compaction threshold, clustered, shallow \\
+Standard gate & PASS \\
+Ambitious gate & PASS \\
+Pairing status & COMPATIBLE \\
+Promotion score & 12.590995 \\
+Decision & \Decision{PROMOTE_P68_ADDRESS_FIBER_ARCHITECTURE} \\
+\bottomrule
+\end{longtable}
+
+\section{Ablation results}
+
+\begin{itemize}
+  \item ablations: 8;
+  \item strongest positive: cache compact + actor binding;
+  \item strongest penalty: actor off vs actor-managed fiber;
+  \item cache contribution estimate: 38.0;
+  \item journal contribution estimate: 8.2;
+  \item compaction contribution estimate: 16.0;
+  \item metadata penalty estimate: -6.5.
+\end{itemize}
+
+\section{Stress results}
+
+\begin{longtable}{@{}lr@{}}
+\toprule
+Status & Count \\
+\midrule
+\endhead
+ROBUST & 2 \\
+WARN & 7 \\
+UNSTABLE & 1 \\
+NO\_GO & 2 \\
+Reasonable in-class NO\_GO & 0 \\
+\bottomrule
+\end{longtable}
+
+\section{Decision}
+
+Decision repo/runtime:
+
+\begin{center}
+\Decision{PROMOTE_P68_ADDRESS_FIBER_ARCHITECTURE}
+\end{center}
+
+Interpretation: \Code{address_fiber_actor_managed_v1} est promu comme candidat
+architectural principal pour P69. Cette promotion est codee, gatee et pair\'ee.
+Elle ne vaut pas validation scientifique finale.
+
+\section{Ce que P68 etablit}
+
+\begin{itemize}
+  \item Le candidat P67 passe les gates standard et ambitious.
+  \item Le pairing est compatible.
+  \item L'overhead reste sous seuil dans les deux modes.
+  \item Les conflits, stale reads et refus budgetaires restent nuls.
+  \item Les stress raisonnables ne produisent aucun \Code{NO_GO}.
+  \item Une zone verte exploitable existe dans la phase map.
+\end{itemize}
+
+\section{Ce que P68 ne prouve pas encore}
+
+\begin{itemize}
+  \item Pas de validation scientifique finale.
+  \item Pas de dataset externe.
+  \item Pas de campagne multi-machine.
+  \item Phase map compacte, non exhaustive.
+  \item Stress scenarios protocolaires, non incidents production.
+\end{itemize}
+
+\section{Recommandation P69}
+
+P69 doit implementer \Code{address_fiber_actor_managed_v1} comme candidat runtime
+garde:
+
+\begin{itemize}
+  \item gates conflits/stale reads/budget refusals;
+  \item comptage visible cache/journal/audit/metadata/compaction;
+  \item replay sur plus de fixtures;
+  \item preparation multi-machine avant revendication scientifique.
+\end{itemize}
+
+\section{Conclusion}
+
+P68 clot le cycle P64--P68 par une promotion architecturale prudente mais
+explicite. Le resultat principal n'est pas un benchmark isole; c'est un
+evaluateur code qui transforme le signal P67 en decision reproductible.
+
+\section{Journal d'iteration}
+
+\begin{itemize}
+  \item 2026-05-01: ajout \Code{src/p68.rs}, CLI \Code{ratio-fibers-promote},
+    tests P68, exports, documentation et Results.
+  \item 2026-05-01: run local P68 observe: real 1.68s.
+  \item 2026-05-01: decision P68:
+    \Decision{PROMOTE_P68_ADDRESS_FIBER_ARCHITECTURE}.
+\end{itemize}
+
+\end{document}

@@ -10,7 +10,8 @@ use crate::{
     P64WorkloadKind, P65ActorCalibrationOptions, P65ActorStrategy, P65JournalPolicy,
     P65QueryLocality, P65RatioActorsOptions, P66JournalPolicy, P66RateProfile,
     P66RatioFibersOptions, P67AuditPolicy, P67CachePolicy, P67CompactionPolicy,
-    P67FiberCalibrationOptions, P67FiberProjectionDepth, P67QueryLocality, WorkloadMode,
+    P67FiberCalibrationOptions, P67FiberProjectionDepth, P67QueryLocality, P68PromotionOptions,
+    WorkloadMode,
 };
 use std::env;
 
@@ -62,6 +63,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "ratio-actors-calibrate" => ratio_actors_calibrate_command(args),
         "ratio-fibers" => ratio_fibers_command(args),
         "ratio-fibers-calibrate" => ratio_fibers_calibrate_command(args),
+        "ratio-fibers-promote" => ratio_fibers_promote_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -396,6 +398,24 @@ fn ratio_fibers_calibrate_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn ratio_fibers_promote_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("ratio-fibers-promote requires a .atlas path"))?;
+    let options = parse_p68_promotion_options(&args[2..])?;
+    let report = crate::p68_promotion_report_file(path, options.options)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    if let Some(export_dir) = &options.export_dir {
+        crate::write_p68_promotion_exports(&report, export_dir)
+            .map_err(|diagnostic| diagnostic.to_string())?;
+    }
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p68_promotion_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p68_promotion_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -455,6 +475,13 @@ struct P66CliOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct P67CalibrationCliOptions {
     options: P67FiberCalibrationOptions,
+    export_dir: Option<String>,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct P68PromotionCliOptions {
+    options: P68PromotionOptions,
     export_dir: Option<String>,
     format: OutputFormat,
 }
@@ -1601,6 +1628,105 @@ fn parse_p67_projection_grid(value: &str) -> Result<Vec<P67FiberProjectionDepth>
         .collect()
 }
 
+fn parse_p68_promotion_options(args: &[String]) -> Result<P68PromotionCliOptions, String> {
+    let mut run_ablations = false;
+    let mut run_stress = false;
+    let mut phase_map = false;
+    let mut strict = true;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--run-ablations" {
+            run_ablations = true;
+            idx += 1;
+        } else if arg == "--run-stress" {
+            run_stress = true;
+            idx += 1;
+        } else if arg == "--phase-map" {
+            phase_map = true;
+            idx += 1;
+        } else if arg == "--strict" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers-promote requires a value after --strict"))?;
+            strict = parse_bool_value(value, "ratio-fibers-promote", "--strict")?;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--strict=") {
+            strict = parse_bool_value(value, "ratio-fibers-promote", "--strict")?;
+            idx += 1;
+        } else if arg == "--mode-pair" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers-promote requires a value after --mode-pair"))?;
+            parse_p68_mode_pair(value)?;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--mode-pair=") {
+            parse_p68_mode_pair(value)?;
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers-promote requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers-promote requires a value after --format"))?;
+            format = Some(parse_format_value(value, "ratio-fibers-promote")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "ratio-fibers-promote")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "ratio-fibers-promote received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P68PromotionCliOptions {
+        options: P68PromotionOptions {
+            run_ablations,
+            run_stress,
+            phase_map,
+            strict,
+        },
+        export_dir,
+        format: format
+            .ok_or_else(|| usage("ratio-fibers-promote requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p68_mode_pair(value: &str) -> Result<(), String> {
+    if value == "standard,ambitious" {
+        Ok(())
+    } else {
+        Err(usage(format!(
+            "ratio-fibers-promote supports --mode-pair standard,ambitious, got '{}'",
+            value
+        )))
+    }
+}
+
+fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
+    match value {
+        "true" | "on" | "yes" => Ok(true),
+        "false" | "off" | "no" => Ok(false),
+        _ => Err(usage(format!(
+            "{} received invalid {} '{}'",
+            command, option, value
+        ))),
+    }
+}
+
 fn parse_positive_u64(value: &str, command: &str, option: &str) -> Result<u64, String> {
     let parsed = value.parse::<u64>().map_err(|_| {
         usage(format!(
@@ -1905,6 +2031,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli ratio-actors-calibrate <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --mode standard|ambitious --runs N --queries N --radius-grid a,b --budget-grid a,b --cache-grid off,on --journal-grid lazy,compact --query-locality-grid clustered,random,mixed [--export-dir <path>] --format json|markdown",
         "  atlas-cli ratio-fibers <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --fiber-strategy point-fiber|neighborhood-fiber|actor-fiber|actor-neighborhood-fiber|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N --budget-bytes N --journal eager|lazy|compact [--cache on|off] [--update-rate low|medium|high] [--audit-rate low|medium|high] [--export-dir <path>] --format json|markdown",
         "  atlas-cli ratio-fibers-calibrate <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --mode standard|ambitious --runs N --queries N --radius-grid a,b --budget-grid a,b --cache-grid off,on,compact --journal-grid eager,lazy,compact --audit-grid minimal,sampled,full --compaction-grid off,threshold,aggressive --query-locality-grid clustered,random,mixed --fiber-projection-grid shallow,medium,full [--export-dir <path>] --format json|markdown",
+        "  atlas-cli ratio-fibers-promote <file.atlas> [--run-ablations] [--run-stress] [--phase-map] [--mode-pair standard,ambitious] [--strict true|false] [--export-dir <path>] --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

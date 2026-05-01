@@ -230,6 +230,28 @@ Les exports restent sous `artifacts/p67/` et sont ignores par Git. Voir
 et le rapport d'analyse
 [docs/analysis/ASTRA-P67-address-fiber-overhead-calibration-analysis.md](docs/analysis/ASTRA-P67-address-fiber-overhead-calibration-analysis.md).
 
+## Validation P68 address-fiber promotion gate
+
+P68 ajoute `ratio-fibers-promote`, un evaluateur de promotion pairant les
+candidats P67 standard et ambitious. Il produit ablations, stress cible, phase
+map et manifeste d'architecture pour P69.
+
+```bash
+cargo run -p atlas-cli -- ratio-fibers-promote examples/p53_strict.atlas \
+  --run-ablations \
+  --run-stress \
+  --phase-map \
+  --export-dir artifacts/p68/promotion_gate \
+  --format json
+```
+
+Les exports restent sous `artifacts/p68/` et sont ignores par Git. Voir
+[docs/validation/astra-p68-address-fiber-promotion-gate.md](docs/validation/astra-p68-address-fiber-promotion-gate.md),
+le manifeste compact
+[docs/validation/astra-p68-address-fiber-architecture-manifest.md](docs/validation/astra-p68-address-fiber-architecture-manifest.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P68-address-fiber-promotion-gate-analysis.md](docs/analysis/ASTRA-P68-address-fiber-promotion-gate-analysis.md).
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport
