@@ -201,6 +201,35 @@ Les exports restent sous `artifacts/p66/` et sont ignores par Git. Voir
 et le rapport d'analyse
 [docs/analysis/ASTRA-P66-address-fiber-local-actor-runtime-analysis.md](docs/analysis/ASTRA-P66-address-fiber-local-actor-runtime-analysis.md).
 
+## Validation P67 address-fiber overhead calibration
+
+P67 ajoute `ratio-fibers-calibrate` pour calibrer l'overhead
+`actor_managed_fiber` sans masquer les couts de cache, journal, audit,
+metadata ou compaction.
+
+```bash
+cargo run -p atlas-cli -- ratio-fibers-calibrate examples/p53_strict.atlas \
+  --workload all \
+  --mode standard \
+  --runs 30 \
+  --queries 1000 \
+  --radius-grid 1,2,3,5 \
+  --budget-grid 524288,1048576,2097152,4194304 \
+  --cache-grid on,compact \
+  --journal-grid lazy,compact \
+  --audit-grid minimal,sampled \
+  --compaction-grid threshold,aggressive \
+  --query-locality-grid clustered,mixed \
+  --fiber-projection-grid shallow,medium \
+  --export-dir artifacts/p67/calibration_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p67/` et sont ignores par Git. Voir
+[docs/validation/astra-p67-address-fiber-overhead-calibration.md](docs/validation/astra-p67-address-fiber-overhead-calibration.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P67-address-fiber-overhead-calibration-analysis.md](docs/analysis/ASTRA-P67-address-fiber-overhead-calibration-analysis.md).
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

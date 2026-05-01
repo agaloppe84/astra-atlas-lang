@@ -1,0 +1,259 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P67 Results -- Address-Fiber Overhead Calibration},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+\newcommand{\SmallCode}[1]{\footnotesize\texttt{\detokenize{#1}}}
+
+\title{\textbf{ASTRA-P67 Results}\\Address-Fiber Overhead Calibration}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P67 du repo \Code{astra-atlas-lang}. La trace
+vivante reste le rapport Markdown d'analyse P67. Ce document \LaTeX{}/PDF est
+le livrable Results fig\'e pour la calibration d'overhead \Code{address-fiber}.
+Aucun r\'esultat nouveau n'est invent\'e ici.
+\end{abstract}
+
+\section{Objectif P67}
+
+P67 calibre l'overhead du mod\`ele \Code{actor_managed_fiber} introduit en P66.
+La question est la suivante: peut-on garder un fort
+\Code{address_fiber_net_gain} tout en ramenant
+\Code{avg_actor_overhead_ratio} sous 0.15?
+
+Les co\^uts de cache, journal, audit, metadata et compaction restent compt\'es.
+Aucun timing n'est goldenis\'e.
+
+\section{Position apr\`es P66}
+
+P66 a confirm\'e la direction \Code{address-fiber}: l'adresse est un point dans
+l'espace virtuel, et la donn\'ee utile est une fibre locale au-dessus de ce
+point. La meilleure strat\'egie observ\'ee \'etait \Code{actor_managed_fiber}.
+
+Limite P66:
+
+\begin{itemize}
+  \item overhead standard moyen: 0.294461;
+  \item overhead ambitious moyen: 0.249963;
+  \item d\'ecision: \Decision{RECALIBRATE_P66_ADDRESS_FIBER_MODEL}.
+\end{itemize}
+
+\section{Param\`etres test\'es}
+
+P67-v1 explore:
+
+\begin{itemize}
+  \item radius: 1, 2, 3, 5 en standard; 2, 3, 5 en ambitious;
+  \item budget bytes: 524288 \`a 4194304;
+  \item cache policy: \Code{on}, \Code{compact};
+  \item journal policy: \Code{lazy}, \Code{compact};
+  \item audit policy: \Code{minimal}, \Code{sampled};
+  \item compaction policy: \Code{threshold}, \Code{aggressive};
+  \item query locality: \Code{clustered}, \Code{mixed};
+  \item fiber projection: \Code{shallow}, \Code{medium}.
+\end{itemize}
+
+P67-v1 garde \Code{update_rate} et \Code{metadata_policy} comme dimensions
+d\'eterministes standard.
+
+\section{Validation locale}
+
+\begin{longtable}{@{}p{0.46\linewidth}p{0.16\linewidth}p{0.28\linewidth}@{}}
+\toprule
+Commande & Statut & Sortie importante \\
+\midrule
+\endhead
+\Code{cargo fmt --all -- --check} & PASS & aucun diff formatage \\
+\Code{cargo build --workspace} & PASS & workspace build OK \\
+\Code{cargo test --workspace} & PASS & suite compl\`ete OK \\
+\Code{cargo test --test p67_tests} & PASS & 10 tests pass\'es \\
+\Code{cargo test --test p66_tests} & PASS & 11 tests pass\'es \\
+\Code{bash scripts/validate_p58_local.sh} & PASS & corpus invalide 21/21 refus\'e \\
+\bottomrule
+\end{longtable}
+
+\section{Campagne standard}
+
+Param\`etres:
+
+\begin{itemize}
+  \item runs: 30;
+  \item queries: 1000;
+  \item configurations test\'ees: 4096;
+  \item dur\'ee observ\'ee: real 0.55s;
+  \item d\'ecision du rapport: \Decision{RECALIBRATE_P67_FIBER_OVERHEAD}.
+\end{itemize}
+
+Best balanced:
+
+\begin{verbatim}
+config_id                  : realish_hybrid_field_fixture:r1:b4194304:
+                             cachecompact:journalcompact:auditminimal:
+                             compactaggressive:localityclustered:projectionshallow
+fiber_ratio_effective/byte : 30.068052
+address_fiber_net_gain     : 17.379955
+avg_actor_overhead_ratio   : 0.123446
+cache_hit_rate             : 0.715000
+updates/audits/compactions : 1500 / 1200 / 31
+conflicts / stale reads    : 0 / 0
+budget refusals            : 0
+promotion_candidate        : true
+\end{verbatim}
+
+\section{Campagne ambitious}
+
+Param\`etres:
+
+\begin{itemize}
+  \item runs: 50;
+  \item queries: 5000;
+  \item configurations test\'ees: 576;
+  \item dur\'ee observ\'ee: real 0.41s;
+  \item d\'ecision du rapport: \Decision{RECALIBRATE_P67_FIBER_OVERHEAD}.
+\end{itemize}
+
+Best balanced:
+
+\begin{verbatim}
+config_id                  : realish_hybrid_field_fixture:r2:b4194304:
+                             cachecompact:journalcompact:auditminimal:
+                             compactthreshold:localityclustered:projectionshallow
+fiber_ratio_effective/byte : 3.229930
+address_fiber_net_gain     : 13.335472
+avg_actor_overhead_ratio   : 0.119345
+cache_hit_rate             : 0.750000
+updates/audits/compactions : 12500 / 10000 / 39
+conflicts / stale reads    : 0 / 0
+budget refusals            : 0
+promotion_candidate        : true
+\end{verbatim}
+
+\section{Meilleures configurations}
+
+\begin{longtable}{@{}p{0.13\linewidth}p{0.27\linewidth}rrrrrr@{}}
+\toprule
+Mode & Configuration & Net gain & Overhead & Ratio/byte & Cache & Conflicts & Refus \\
+\midrule
+\endhead
+standard & \SmallCode{hybrid r1 / compact / aggressive / clustered / shallow} & 17.379955 & 0.123446 & 30.068052 & 0.715000 & 0 & 0 \\
+ambitious & \SmallCode{hybrid r2 / compact / threshold / clustered / shallow} & 13.335472 & 0.119345 & 3.229930 & 0.750000 & 0 & 0 \\
+\bottomrule
+\end{longtable}
+
+\section{Pareto front}
+
+Les deux campagnes produisent une fronti\`ere de Pareto non vide:
+
+\begin{itemize}
+  \item standard: 32 entr\'ees Pareto retenues;
+  \item ambitious: 32 entr\'ees Pareto retenues.
+\end{itemize}
+
+La zone candidate favorise cache compact, journal compact, audit minimal,
+localit\'e clustered, projection shallow et compaction threshold/aggressive
+selon la pression de requ\^etes.
+
+\section{Crit\`eres de promotion}
+
+Les crit\`eres num\'eriques candidats sont satisfaits par les meilleurs
+\Code{best_balanced} locaux:
+
+\begin{itemize}
+  \item standard: net gain $>$ 3.0 et overhead $<$ 0.15;
+  \item ambitious: net gain $>$ 2.5 et overhead $<$ 0.18;
+  \item conflicts = 0;
+  \item stale reads = 0;
+  \item budget refusals = 0;
+  \item update/audit/compaction sont non nuls et compt\'es.
+\end{itemize}
+
+Cependant, P67-v1 ne retourne pas \Decision{PROMOTE_P67_ADDRESS_FIBER_ARCHITECTURE}.
+La promotion doit \^etre formalis\'ee en P68 comme gate pair\'e standard +
+ambitious, avec dimensions update/metadata explicites.
+
+\section{D\'ecision}
+
+D\'ecision repo:
+
+\[
+  \Decision{VALIDER_IMPL_P67_ADDRESS_FIBER_OVERHEAD_CALIBRATION}
+\]
+
+D\'ecision scientifique/runtime:
+
+\[
+  \Decision{RECALIBRATE_P67_FIBER_OVERHEAD}
+\]
+
+Promotion candidate:
+
+\[
+  \text{yes}
+\]
+
+\section{Limites}
+
+\begin{itemize}
+  \item workloads internes d\'eterministes;
+  \item pas de dataset externe;
+  \item pas de multi-machine;
+  \item update rate et metadata policy restent fixes en P67-v1;
+  \item les ratios \'elev\'es sont des sorties de calibration, pas une validation scientifique finale;
+  \item aucun timing golden.
+\end{itemize}
+
+\section{Recommandation P68}
+
+P68 doit formaliser un gate pair\'e standard + ambitious:
+
+\begin{itemize}
+  \item combiner les deux rapports dans un \'evaluateur de promotion;
+  \item rendre \Code{update_rate} et \Code{metadata_policy} explicitement calibrables;
+  \item rejouer sur une seconde machine si possible;
+  \item conserver tous les co\^uts fibre/acteur;
+  \item ne promouvoir qu'avec preuve locale structur\'ee et limites explicites.
+\end{itemize}
+
+\section{Journal d'it\'eration}
+
+\begin{itemize}
+  \item 2026-05-01: ajout de \Code{p67_address_fiber_overhead_calibration_v1};
+  \item 2026-05-01: ajout de \Code{ratio-fibers-calibrate};
+  \item 2026-05-01: ex\'ecution des campagnes standard et ambitious;
+  \item 2026-05-01: g\'en\'eration du rapport Results \LaTeX{}/PDF;
+  \item 2026-05-01: d\'ecision maintenue \Decision{RECALIBRATE_P67_FIBER_OVERHEAD}.
+\end{itemize}
+
+\end{document}
