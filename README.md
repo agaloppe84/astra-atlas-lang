@@ -324,6 +324,40 @@ l'audit de tests
 et le rapport d'analyse
 [docs/analysis/ASTRA-P71-filesystem-fiber-store-real-data-analysis.md](docs/analysis/ASTRA-P71-filesystem-fiber-store-real-data-analysis.md).
 
+## Validation P72 living procedural fiber store
+
+P72 ajoute `living-store-bench` pour tester un store ASTRA vivant: etat froid
+persistant, etat runtime temporaire, actions read/query/update/delete/audit,
+compaction, close, reopen et replay du journal. Le cache runtime n'est pas
+requis pour la correction; seule l'equivalence logique observable apres reopen
+est gatee.
+
+```bash
+cargo run -p atlas-cli -- living-store-bench \
+  --corpus all \
+  --budget-bytes 10485760 \
+  --runs 30 \
+  --queries 1000 \
+  --updates 100 \
+  --deletes 20 \
+  --compact threshold \
+  --adaptive on \
+  --export-dir artifacts/p72/living_store_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p72/` et sont ignores par Git. Voir
+[docs/validation/astra-p72-living-procedural-fiber-store.md](docs/validation/astra-p72-living-procedural-fiber-store.md),
+l'audit de tests
+[docs/analysis/ASTRA-P72-test-stack-audit.md](docs/analysis/ASTRA-P72-test-stack-audit.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P72-living-procedural-fiber-store-analysis.md](docs/analysis/ASTRA-P72-living-procedural-fiber-store-analysis.md).
+
+Resultat local P72 standard: `reopen_equivalence=true`,
+`ratio_living=2.366879`, `guard_decision=NO_GO_GUARD_INCOMPRESSIBLE_REFUSED`,
+`drift_status=HARD_DRIFT`, decision
+`RECALIBRATE_P72_LIVING_COST_MODEL`.
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

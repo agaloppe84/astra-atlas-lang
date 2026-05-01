@@ -45,3 +45,6 @@ artifacts/p70/
 
 # P71 local filesystem fiber store exports
 artifacts/p71/
+
+# P72 local living procedural fiber store exports
+artifacts/p72/

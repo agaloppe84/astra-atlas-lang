@@ -1,0 +1,5 @@
+atlas version=0.1;
+p72_lifecycle id=p72_guard_false_gain architecture=address_fiber_actor_managed_v1;
+lifecycle name=living_store persistence=cold_manifest runtime=materialize_on_read close=checkpoint_delta reopen=replay_journal compaction=threshold;
+storage_form name=procedural_fiber_store generator=accounted parameters=accounted dictionary=accounted residuals=accounted journal=accounted cache=runtime_only actor_state=checkpointed_minimal audit_metadata=accounted checksums=accounted checkpoint=accounted;
+lifecycle_gates reopen_equivalence=true all_persistent_storage_counted=true runtime_cache_not_required_for_correctness=true journal_replay_bounded=true guard_no_false_gain=false;

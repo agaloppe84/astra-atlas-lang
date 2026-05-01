@@ -12,7 +12,7 @@ use crate::{
     P66RatioFibersOptions, P67AuditPolicy, P67CachePolicy, P67CompactionPolicy,
     P67FiberCalibrationOptions, P67FiberProjectionDepth, P67QueryLocality, P68PromotionOptions,
     P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, P71FiberStoreOptions,
-    RealDataCorpusKind, WorkloadMode,
+    P72CompactionPolicy, P72LivingStoreOptions, RealDataCorpusKind, WorkloadMode,
 };
 use std::env;
 
@@ -69,12 +69,27 @@ fn run(args: &[String]) -> Result<(), String> {
         "contract-run" => contract_run_command(args),
         "contract-replay" => contract_replay_command(args),
         "fiber-store-bench" => fiber_store_bench_command(args),
+        "living-store-bench" => living_store_bench_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
 }
 
 fn check_path(path: &str) -> Result<(), String> {
+    if crate::p72_lifecycle_file_looks_like(path) {
+        return match crate::p72_lifecycle_report_file(path) {
+            Ok(report) => {
+                println!(
+                    "OK: p72_lifecycle={} reopen_equivalence={} journal_replay_bounded={}",
+                    report.lifecycle_id,
+                    report.reopen_equivalence_gate,
+                    report.journal_replay_bounded
+                );
+                Ok(())
+            }
+            Err(diagnostic) => Err(diagnostic.to_string()),
+        };
+    }
     if crate::p69_contract_file_looks_like(path) {
         return match crate::p69_contract_report_file(path) {
             Ok(report) => {
@@ -493,6 +508,17 @@ fn fiber_store_bench_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn living_store_bench_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p72_living_store_options(&args[1..])?;
+    let report = crate::p72_living_store_bench(options.options, &options.export_dir)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p72_living_store_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p72_living_store_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -580,6 +606,13 @@ struct P70ContractReplayCliOptions {
 #[derive(Debug, Clone, PartialEq)]
 struct P71FiberStoreCliOptions {
     options: P71FiberStoreOptions,
+    export_dir: String,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P72LivingStoreCliOptions {
+    options: P72LivingStoreOptions,
     export_dir: String,
     format: OutputFormat,
 }
@@ -2146,6 +2179,203 @@ fn parse_p71_corpora(value: &str) -> Result<Vec<RealDataCorpusKind>, String> {
     Ok(corpora)
 }
 
+fn parse_p72_living_store_options(args: &[String]) -> Result<P72LivingStoreCliOptions, String> {
+    let mut corpora = None;
+    let mut budget_bytes = None;
+    let mut runs = None;
+    let mut queries = None;
+    let mut updates = None;
+    let mut deletes = None;
+    let mut compact = None;
+    let mut adaptive = None;
+    let mut reopen_check = Some(true);
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--corpus" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --corpus"))?;
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corpus=") {
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 1;
+        } else if arg == "--budget-bytes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --budget-bytes"))?;
+            budget_bytes = Some(parse_positive_u64(
+                value,
+                "living-store-bench",
+                "--budget-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--budget-bytes=") {
+            budget_bytes = Some(parse_positive_u64(
+                value,
+                "living-store-bench",
+                "--budget-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--runs" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --runs"))?;
+            runs = Some(parse_positive_usize(value, "living-store-bench", "--runs")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--runs=") {
+            runs = Some(parse_positive_usize(value, "living-store-bench", "--runs")?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(
+                value,
+                "living-store-bench",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "living-store-bench",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--updates" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --updates"))?;
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "living-store-bench",
+                "--updates",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--updates=") {
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "living-store-bench",
+                "--updates",
+            )?);
+            idx += 1;
+        } else if arg == "--deletes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --deletes"))?;
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "living-store-bench",
+                "--deletes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--deletes=") {
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "living-store-bench",
+                "--deletes",
+            )?);
+            idx += 1;
+        } else if arg == "--compact" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --compact"))?;
+            compact = Some(parse_p72_compact_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--compact=") {
+            compact = Some(parse_p72_compact_value(value)?);
+            idx += 1;
+        } else if arg == "--adaptive" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --adaptive"))?;
+            adaptive = Some(parse_bool_value(value, "living-store-bench", "--adaptive")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--adaptive=") {
+            adaptive = Some(parse_bool_value(value, "living-store-bench", "--adaptive")?);
+            idx += 1;
+        } else if arg == "--reopen-check" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --reopen-check"))?;
+            reopen_check = Some(parse_bool_value(
+                value,
+                "living-store-bench",
+                "--reopen-check",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--reopen-check=") {
+            reopen_check = Some(parse_bool_value(
+                value,
+                "living-store-bench",
+                "--reopen-check",
+            )?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("living-store-bench requires a value after --format"))?;
+            format = Some(parse_format_value(value, "living-store-bench")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "living-store-bench")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "living-store-bench received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P72LivingStoreCliOptions {
+        options: P72LivingStoreOptions {
+            corpora: corpora.ok_or_else(|| {
+                usage("living-store-bench requires --corpus all|code|logs|json|csv|guard")
+            })?,
+            budget_bytes: budget_bytes
+                .ok_or_else(|| usage("living-store-bench requires --budget-bytes N"))?,
+            runs: runs.ok_or_else(|| usage("living-store-bench requires --runs N"))?,
+            queries: queries.ok_or_else(|| usage("living-store-bench requires --queries N"))?,
+            updates: updates.ok_or_else(|| usage("living-store-bench requires --updates N"))?,
+            deletes: deletes.ok_or_else(|| usage("living-store-bench requires --deletes N"))?,
+            compact: compact.ok_or_else(|| {
+                usage("living-store-bench requires --compact off|threshold|aggressive")
+            })?,
+            adaptive: adaptive
+                .ok_or_else(|| usage("living-store-bench requires --adaptive on|off"))?,
+            reopen_check: reopen_check.unwrap_or(true),
+        },
+        export_dir: export_dir
+            .ok_or_else(|| usage("living-store-bench requires --export-dir <path>"))?,
+        format: format
+            .ok_or_else(|| usage("living-store-bench requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p72_compact_value(value: &str) -> Result<P72CompactionPolicy, String> {
+    P72CompactionPolicy::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "living-store-bench received unsupported compact policy '{}'; expected off|threshold|aggressive",
+            value
+        ))
+    })
+}
+
 fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
     match value {
         "true" | "on" | "yes" => Ok(true),
@@ -2456,6 +2686,15 @@ fn parse_positive_usize(value: &str, command: &str, option: &str) -> Result<usiz
     Ok(parsed)
 }
 
+fn parse_nonnegative_usize(value: &str, command: &str, option: &str) -> Result<usize, String> {
+    value.parse::<usize>().map_err(|_| {
+        usage(format!(
+            "{} received invalid {} '{}'",
+            command, option, value
+        ))
+    })
+}
+
 fn usage(detail: impl AsRef<str>) -> String {
     let commands = [
         "usage:",
@@ -2482,6 +2721,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli contract-run <file.atlas> --mode smoke|standard|ambitious --runs N --queries N [--export-dir <path>] --format json|markdown",
         "  atlas-cli contract-replay <file.atlas> --fixtures all|log|sparse|json|hybrid --mode smoke|standard|ambitious --runs N --queries N --tolerance-percent N [--export-dir <path>] --format json|markdown",
         "  atlas-cli fiber-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --runs N --queries N --export-dir <path> --format json|markdown",
+        "  atlas-cli living-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --runs N --queries N --updates N --deletes N --compact off|threshold|aggressive --adaptive on|off [--reopen-check on|off] --export-dir <path> --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

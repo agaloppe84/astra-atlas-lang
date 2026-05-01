@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 38] {
+fn invalid_cases() -> [InvalidCase; 44] {
     [
         InvalidCase {
             name: "bad_version",
@@ -316,6 +316,54 @@ fn invalid_cases() -> [InvalidCase; 38] {
             family: None,
             field: None,
             message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p72_missing_reopen_gate",
+            text: include_str!("../examples/invalid/p72_missing_reopen_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p72_lifecycle'",
+        },
+        InvalidCase {
+            name: "p72_cache_required_for_correctness",
+            text: include_str!("../examples/invalid/p72_cache_required_for_correctness.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p72_lifecycle'",
+        },
+        InvalidCase {
+            name: "p72_unaccounted_checkpoint",
+            text: include_str!("../examples/invalid/p72_unaccounted_checkpoint.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p72_lifecycle'",
+        },
+        InvalidCase {
+            name: "p72_missing_journal_replay",
+            text: include_str!("../examples/invalid/p72_missing_journal_replay.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p72_lifecycle'",
+        },
+        InvalidCase {
+            name: "p72_guard_false_gain",
+            text: include_str!("../examples/invalid/p72_guard_false_gain.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p72_lifecycle'",
+        },
+        InvalidCase {
+            name: "p72_unbounded_replay",
+            text: include_str!("../examples/invalid/p72_unbounded_replay.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p72_lifecycle'",
         },
     ]
 }

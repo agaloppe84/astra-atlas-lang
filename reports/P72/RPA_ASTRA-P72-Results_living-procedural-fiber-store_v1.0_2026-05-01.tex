@@ -1,0 +1,319 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P72 Results -- Living Procedural Fiber Store},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+\emergencystretch=3em
+\sloppy
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+
+\title{\textbf{ASTRA-P72 Results}\\Living Procedural Fiber Store}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P72 du repo \Code{astra-atlas-lang}. P72
+introduit un store procedural fibre vivant: etat froid persistant, etat runtime
+temporaire, actions read/query/update/delete/audit, compaction, close, reopen
+et replay du journal. Le sprint valide le chemin fonctionnel close/reopen, mais
+garde une decision scientifique conservatrice car le modele de cout vivant
+reste en drift dur.
+\end{abstract}
+
+\section{But de ASTRA-P72}
+
+P72 teste ASTRA comme stockage procedural vivant. ASTRA n'est pas un disque
+virtuel qui contient toutes les fibres generees. ASTRA persiste un etat froid
+procedural suffisant pour regenerer les fibres utiles a chaud. Le cache runtime
+peut disparaitre si la reouverture restaure le meme etat logique observable.
+
+\section{Position apres P71}
+
+P71 avait introduit un premier Fiber Store filesystem reel:
+
+\begin{itemize}
+  \item \Code{budget_bytes = 10485760};
+  \item \Code{source_dataset_bytes = 1332506};
+  \item \Code{filesystem_store_bytes = 747457};
+  \item \Code{exact_recoverable_bytes = 1266970};
+  \item \Code{useful_retrieved_bytes = 79972};
+  \item \Code{roundtrip_success_rate = 1.000000};
+  \item \Code{retrieval_success_rate = 1.000000};
+  \item \Code{guard_decision = NO_GO_GUARD_INCOMPRESSIBLE_REFUSED};
+  \item \Code{drift_status = HARD_DRIFT}, \Code{delta = 324.382835\%};
+  \item decision: \Decision{RECALIBRATE_P71_CONTRACT_COST_MODEL}.
+\end{itemize}
+
+P72 conserve le pipeline fonctionnel P71 et separe cout persistant, cout runtime
+et cout de reouverture/replay.
+
+\section{Modele cold/runtime/reopen}
+
+L'etat froid contient contrat, generateurs, parametres quantifies,
+dictionnaires, index, residus, journal, checkpoints, manifeste, checksums,
+metadata d'audit, metadata de surete et politique acteur.
+
+L'etat runtime contient fibres materialisees, cache chaud, etats acteurs,
+queues d'action, index temporaires et vues decodees. Ces structures sont un
+working set mesure, pas une source de verite cachee.
+
+\section{Lifecycle \Code{.atlas}}
+
+P72 ajoute une syntaxe specialisee et declarative. Le fichier valide
+\Code{examples/valid/p72_living_fiber_store.atlas} exprime les champs suivants:
+
+\begin{longtable}{@{}p{0.36\linewidth}p{0.56\linewidth}@{}}
+\toprule
+Bloc & Champs retenus \\
+\midrule
+\endhead
+\Code{p72_lifecycle} & id \Code{p72_living_fiber_store}; architecture \Code{address_fiber_actor_managed_v1} \\
+\Code{lifecycle} & persistence \Code{cold_manifest}; runtime \Code{materialize_on_read}; close \Code{checkpoint_delta}; reopen \Code{replay_journal}; compaction \Code{threshold} \\
+\Code{storage_form} & generator, parameters, dictionary, residuals, journal, audit, checksums and checkpoint are accounted; cache is \Code{runtime_only}; actor state is \Code{checkpointed_minimal} \\
+\Code{lifecycle_gates} & reopen equivalence, counted persistent storage, bounded replay, cache-not-required and guard-no-false-gain are all true \\
+\bottomrule
+\end{longtable}
+
+Cette extension ne transforme pas \Code{.atlas} en langage generaliste.
+
+\section{Validation locale}
+
+Commandes executees localement:
+
+\begin{verbatim}
+git pull --ff-only
+cargo fmt --all -- --check
+cargo build --workspace
+cargo test --workspace
+cargo test --test p72_tests
+cargo test --test p71_tests
+bash scripts/validate_p58_local.sh
+cargo run -p atlas-cli -- living-store-bench \
+  --corpus all \
+  --budget-bytes 10485760 \
+  --runs 30 \
+  --queries 1000 \
+  --updates 100 \
+  --deletes 20 \
+  --compact threshold \
+  --adaptive on \
+  --export-dir artifacts/p72/living_store_standard \
+  --format json
+\end{verbatim}
+
+Resultats de validation:
+
+\begin{itemize}
+  \item \Code{cargo fmt --all -- --check}: PASS;
+  \item \Code{cargo build --workspace}: PASS;
+  \item \Code{cargo test --workspace}: PASS;
+  \item \Code{p72_tests.rs}: 13 passed;
+  \item \Code{p71_tests.rs}: 14 passed;
+  \item \Code{validate_p58_local.sh}: PASS, 44 invalides refuses;
+  \item invalides P72 dedies: 6/6 refuses;
+  \item campagne P72 standard: PASS, duree observee \Code{real 0.35s}.
+\end{itemize}
+
+\section{Campagne standard P72}
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{budget_bytes} & 10,485,760 \\
+\Code{source_dataset_bytes} & 1,423,450 \\
+\Code{cold_persisted_bytes} & 332,405 \\
+\Code{runtime_peak_bytes} & 164,734 \\
+\Code{exact_recoverable_bytes} & 1,357,914 \\
+\Code{useful_retrieved_bytes} & 86,845 \\
+\Code{roundtrip_success_rate} & 1.000000 \\
+\Code{retrieval_success_rate} & 1.000000 \\
+\Code{reopen_equivalence} & true \\
+\Code{journal_replay_steps} & 809 \\
+\Code{adaptive_rewrite_count} & 3 \\
+\bottomrule
+\end{longtable}
+
+\section{Cout filesystem}
+
+\begin{longtable}{@{}p{0.42\linewidth}p{0.32\linewidth}r@{}}
+\toprule
+Scope & Metrique & Bytes \\
+\midrule
+\endhead
+Cold & \Code{cold_persisted_bytes} & 332,405 \\
+Cold & \Code{manifest_bytes} & 85 \\
+Cold & \Code{contract_bytes} & 108 \\
+Cold & \Code{residual_bytes} & 292,651 \\
+Cold & \Code{journal_bytes} & 5,768 \\
+Cold & \Code{checkpoint_bytes} & 75 \\
+Cold & \Code{checksum_bytes} & 17,042 \\
+Cold & \Code{audit_metadata_bytes} & 61 \\
+Cold & \Code{safety_metadata_bytes} & 79 \\
+Runtime & \Code{runtime_peak_bytes} & 164,734 \\
+Runtime & materialized fiber bytes & 43,422 \\
+Runtime & cache bytes & 24,576 \\
+Runtime & actor state bytes & 13,888 \\
+Runtime & queue bytes & 6,272 \\
+Runtime & temporary index bytes & 11,040 \\
+Runtime & decoded view bytes & 65,536 \\
+\bottomrule
+\end{longtable}
+
+\section{Close/reopen}
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{reopen_equivalence} & true \\
+\Code{journal_replay_success} & true \\
+\Code{journal_replay_steps} & 809 \\
+\Code{runtime_cache_required_for_correctness} & false \\
+\Code{logical_state_hash_before_close} & compatible \\
+\Code{logical_state_hash_after_reopen} & compatible \\
+\bottomrule
+\end{longtable}
+
+Le cache runtime n'a pas besoin d'etre identique byte a byte apres reopen. Le
+gate porte sur les observables logiques: lectures, queries, tombstones, journal,
+checksums et hash logique.
+
+\section{Compaction et encodage adaptatif}
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{compact_policy} & threshold \\
+\Code{compaction_savings_bytes} & 27,483 \\
+\Code{compaction_savings_percent} & 82.467143 \\
+\Code{adaptive_rewrite_count} & 3 \\
+\Code{exactness_preserved} & true \\
+\Code{reopen_equivalence_preserved} & true \\
+\bottomrule
+\end{longtable}
+
+\section{Ratios}
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{ratio_persistent} & 4.085119 \\
+\Code{ratio_runtime} & 8.243071 \\
+\Code{ratio_living} & 2.366879 \\
+\Code{useful_retrieved_bytes_per_persistent_byte} & 0.261263 \\
+\Code{procedural_store_gain_vs_raw} & 4.282276 \\
+\Code{living_gain_vs_raw} & 2.481110 \\
+\bottomrule
+\end{longtable}
+
+\section{Garde incompressible}
+
+La garde incompressible reste refusee sans faux gain:
+\Decision{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED}. Elle ne contribue pas
+artificiellement au succes du ratio.
+
+\section{Drift declare vs mesure}
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{declared_persistent_bytes} & 186,368 \\
+\Code{measured_cold_persisted_bytes} & 332,405 \\
+\Code{declared_vs_cold_delta_percent} & 78.359482 \\
+\Code{drift_status} & HARD\_DRIFT \\
+\bottomrule
+\end{longtable}
+
+P72 reduit le probleme P71 en separant le runtime du froid, mais le modele
+declare reste trop bas par rapport au cout persistant mesure. Cette derive
+interdit une validation finale.
+
+\section{Decision}
+
+Decision P72:
+\Decision{RECALIBRATE_P72_LIVING_COST_MODEL}.
+
+P72 etablit que le cycle vivant fonctionne: exact roundtrip, retrieval, journal
+replay, compaction, guard et reopen equivalence passent localement. P72
+n'etablit pas encore un modele de cout vivant final.
+
+\section{Ce que P72 etablit}
+
+\begin{itemize}
+  \item un store vivant peut etre encode, ouvert, modifie, compacte, ferme et
+  rouvert;
+  \item l'equivalence logique observable survit au reopen;
+  \item le cache runtime n'est pas une memoire cachee necessaire a la
+  correction;
+  \item le cout persistant et le cout runtime sont mesures separement;
+  \item la garde incompressible reste honnete.
+\end{itemize}
+
+\section{Ce que P72 ne prouve pas}
+
+\begin{itemize}
+  \item pas de validation scientifique multi-machine;
+  \item pas de long historique de reopen/replay;
+  \item pas de corruption/recovery generalise;
+  \item pas de modele final de cout, car le drift persistant reste dur;
+  \item pas de garantie sur datasets externes non testes.
+\end{itemize}
+
+\section{Recommendation P73}
+
+P73 devrait tester des sessions vivantes plus longues: plusieurs cycles
+open/close, rafales d'updates, injection de corruption, recovery explicite,
+bornes de replay journal, et calibration du cout persistant declare pour
+reduire le drift sous seuil.
+
+\section{Journal d'iteration}
+
+\begin{itemize}
+  \item 2026-05-01: ajout du module \Code{p72}, de \Code{living-store-bench},
+  de la syntaxe lifecycle P72 et des invalides P72;
+  \item 2026-05-01: ajout de \Code{tests/p72_tests.rs} et audit de stack de
+  tests P72;
+  \item 2026-05-01: validation locale PASS et campagne P72 standard executee;
+  \item 2026-05-01: Results P72 genere avec Tectonic via
+  \Code{scripts/build_report.sh}.
+\end{itemize}
+
+\end{document}
