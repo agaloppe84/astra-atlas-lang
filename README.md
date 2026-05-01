@@ -46,3 +46,9 @@ bash scripts/validate_p58_local.sh
 
 Voir [docs/validation_p58.md](docs/validation_p58.md) pour le detail des gates,
 des decisions attendues et du perimetre CI.
+
+## Validation P59 classique
+
+P59 interprete les acquis P58 comme invariants ASTRA classiques, sans nouveau
+runtime ni changement de grammaire `.atlas`. Voir
+[docs/validation_p59_classique.md](docs/validation_p59_classique.md).
