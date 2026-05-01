@@ -175,6 +175,32 @@ Les exports restent sous `artifacts/p65/` et sont ignores par Git. Voir
 et le rapport d'analyse
 [docs/analysis/ASTRA-P65-2-local-actor-overhead-calibration-analysis.md](docs/analysis/ASTRA-P65-2-local-actor-overhead-calibration-analysis.md).
 
+## Validation P66 address-fiber
+
+P66 ajoute `ratio-fibers` pour formaliser l'espace virtuel comme base
+d'adresses avec fibres locales. Les strategies comparees sont `point-fiber`,
+`neighborhood-fiber`, `actor-fiber` et `actor-neighborhood-fiber`.
+
+```bash
+cargo run -p atlas-cli -- ratio-fibers examples/p53_strict.atlas \
+  --workload all \
+  --fiber-strategy all \
+  --mode standard \
+  --runs 30 \
+  --queries 1000 \
+  --neighborhood-radius 3 \
+  --budget-bytes 2097152 \
+  --cache on \
+  --journal compact \
+  --export-dir artifacts/p66/fibers_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p66/` et sont ignores par Git. Voir
+[docs/validation/astra-p66-address-fiber-local-actor-runtime.md](docs/validation/astra-p66-address-fiber-local-actor-runtime.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P66-address-fiber-local-actor-runtime-analysis.md](docs/analysis/ASTRA-P66-address-fiber-local-actor-runtime-analysis.md).
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

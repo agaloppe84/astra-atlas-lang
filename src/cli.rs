@@ -6,9 +6,10 @@ use crate::{
     p63_campaign_report_file_with_runs, p63_campaign_report_to_json,
     p63_campaign_set_summary_json_file, p63_campaign_summary_json_file, run_workload_file,
     validate_file, write_p63_campaign_exports, write_p64_campaign_exports, DiagnosticCode,
-    P63ThresholdProfile, P64GenerationPolicy, P64RatioRealishOptions, P64WorkloadKind,
-    P65ActorCalibrationOptions, P65ActorStrategy, P65JournalPolicy, P65QueryLocality,
-    P65RatioActorsOptions, WorkloadMode,
+    FiberGenerationStrategy, P63ThresholdProfile, P64GenerationPolicy, P64RatioRealishOptions,
+    P64WorkloadKind, P65ActorCalibrationOptions, P65ActorStrategy, P65JournalPolicy,
+    P65QueryLocality, P65RatioActorsOptions, P66JournalPolicy, P66RateProfile,
+    P66RatioFibersOptions, WorkloadMode,
 };
 use std::env;
 
@@ -58,6 +59,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "ratio-realish" => ratio_realish_command(args),
         "ratio-actors" => ratio_actors_command(args),
         "ratio-actors-calibrate" => ratio_actors_calibrate_command(args),
+        "ratio-fibers" => ratio_fibers_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -356,6 +358,24 @@ fn ratio_actors_calibrate_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn ratio_fibers_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("ratio-fibers requires a .atlas path"))?;
+    let options = parse_p66_options(&args[2..])?;
+    let report = crate::p66_ratio_fibers_report_file(path, options.options)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    if let Some(export_dir) = &options.export_dir {
+        crate::write_p66_fiber_campaign_exports(&report, export_dir)
+            .map_err(|diagnostic| diagnostic.to_string())?;
+    }
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p66_report_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p66_summary_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -401,6 +421,13 @@ struct P65CliOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct P65CalibrationCliOptions {
     options: P65ActorCalibrationOptions,
+    export_dir: Option<String>,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct P66CliOptions {
+    options: P66RatioFibersOptions,
     export_dir: Option<String>,
     format: OutputFormat,
 }
@@ -999,6 +1026,229 @@ fn parse_p65_actor_strategy_value(value: &str) -> Result<Option<P65ActorStrategy
     })
 }
 
+fn parse_p66_options(args: &[String]) -> Result<P66CliOptions, String> {
+    let mut workload = None;
+    let mut workload_all = false;
+    let mut fiber_strategy = None;
+    let mut fiber_strategy_all = false;
+    let mut mode = None;
+    let mut runs = None;
+    let mut queries = None;
+    let mut neighborhood_radius = None;
+    let mut budget_bytes = None;
+    let mut cache_enabled = true;
+    let mut journal_policy = None;
+    let mut update_rate = None;
+    let mut audit_rate = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--workload" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --workload"))?;
+            let parsed = parse_p64_workload_value(value)?;
+            workload_all = parsed.is_none();
+            workload = parsed;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--workload=") {
+            let parsed = parse_p64_workload_value(value)?;
+            workload_all = parsed.is_none();
+            workload = parsed;
+            idx += 1;
+        } else if arg == "--fiber-strategy" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --fiber-strategy"))?;
+            let parsed = parse_p66_fiber_strategy_value(value)?;
+            fiber_strategy_all = parsed.is_none();
+            fiber_strategy = parsed;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--fiber-strategy=") {
+            let parsed = parse_p66_fiber_strategy_value(value)?;
+            fiber_strategy_all = parsed.is_none();
+            fiber_strategy = parsed;
+            idx += 1;
+        } else if arg == "--mode" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --mode"))?;
+            mode = Some(parse_mode_value(value, "ratio-fibers")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--mode=") {
+            mode = Some(parse_mode_value(value, "ratio-fibers")?);
+            idx += 1;
+        } else if arg == "--runs" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --runs"))?;
+            runs = Some(parse_positive_usize(value, "ratio-fibers", "--runs")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--runs=") {
+            runs = Some(parse_positive_usize(value, "ratio-fibers", "--runs")?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(value, "ratio-fibers", "--queries")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(value, "ratio-fibers", "--queries")?);
+            idx += 1;
+        } else if arg == "--neighborhood-radius" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-fibers requires a value after --neighborhood-radius")
+            })?;
+            neighborhood_radius = Some(parse_positive_usize(
+                value,
+                "ratio-fibers",
+                "--neighborhood-radius",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--neighborhood-radius=") {
+            neighborhood_radius = Some(parse_positive_usize(
+                value,
+                "ratio-fibers",
+                "--neighborhood-radius",
+            )?);
+            idx += 1;
+        } else if arg == "--budget-bytes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --budget-bytes"))?;
+            budget_bytes = Some(parse_positive_u64(value, "ratio-fibers", "--budget-bytes")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--budget-bytes=") {
+            budget_bytes = Some(parse_positive_u64(value, "ratio-fibers", "--budget-bytes")?);
+            idx += 1;
+        } else if arg == "--cache" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --cache"))?;
+            cache_enabled = parse_cache_value(value)?;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cache=") {
+            cache_enabled = parse_cache_value(value)?;
+            idx += 1;
+        } else if arg == "--journal" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --journal"))?;
+            journal_policy = Some(parse_p66_journal_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--journal=") {
+            journal_policy = Some(parse_p66_journal_value(value)?);
+            idx += 1;
+        } else if arg == "--update-rate" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --update-rate"))?;
+            update_rate = Some(parse_p66_rate_value(value, "--update-rate")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--update-rate=") {
+            update_rate = Some(parse_p66_rate_value(value, "--update-rate")?);
+            idx += 1;
+        } else if arg == "--audit-rate" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --audit-rate"))?;
+            audit_rate = Some(parse_p66_rate_value(value, "--audit-rate")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--audit-rate=") {
+            audit_rate = Some(parse_p66_rate_value(value, "--audit-rate")?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-fibers requires a value after --format"))?;
+            format = Some(parse_format_value(value, "ratio-fibers")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "ratio-fibers")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "ratio-fibers received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    if !workload_all && workload.is_none() {
+        return Err(usage("ratio-fibers requires --workload <name>|all"));
+    }
+    if !fiber_strategy_all && fiber_strategy.is_none() {
+        return Err(usage("ratio-fibers requires --fiber-strategy <name>|all"));
+    }
+
+    Ok(P66CliOptions {
+        options: P66RatioFibersOptions {
+            workload,
+            fiber_strategy,
+            mode: mode
+                .ok_or_else(|| usage("ratio-fibers requires --mode smoke|standard|ambitious"))?,
+            runs: runs.ok_or_else(|| usage("ratio-fibers requires --runs N"))?,
+            queries: queries.ok_or_else(|| usage("ratio-fibers requires --queries N"))?,
+            neighborhood_radius: neighborhood_radius
+                .ok_or_else(|| usage("ratio-fibers requires --neighborhood-radius N"))?,
+            budget_bytes: budget_bytes
+                .ok_or_else(|| usage("ratio-fibers requires --budget-bytes N"))?,
+            cache_enabled,
+            journal_policy: journal_policy
+                .ok_or_else(|| usage("ratio-fibers requires --journal eager|lazy|compact"))?,
+            update_rate,
+            audit_rate,
+        },
+        export_dir,
+        format: format.ok_or_else(|| usage("ratio-fibers requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p66_fiber_strategy_value(value: &str) -> Result<Option<FiberGenerationStrategy>, String> {
+    if value == "all" {
+        return Ok(None);
+    }
+    FiberGenerationStrategy::from_str(value)
+        .map(Some)
+        .ok_or_else(|| {
+            usage(format!(
+                "ratio-fibers received unsupported fiber strategy '{}'; expected point-fiber|neighborhood-fiber|actor-fiber|actor-neighborhood-fiber|all",
+                value
+            ))
+        })
+}
+
+fn parse_p66_journal_value(value: &str) -> Result<P66JournalPolicy, String> {
+    P66JournalPolicy::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "ratio-fibers received unsupported journal policy '{}'; expected eager|lazy|compact",
+            value
+        ))
+    })
+}
+
+fn parse_p66_rate_value(value: &str, option: &str) -> Result<P66RateProfile, String> {
+    P66RateProfile::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "ratio-fibers received unsupported {} '{}'; expected low|medium|high",
+            option, value
+        ))
+    })
+}
+
 fn parse_positive_u64(value: &str, command: &str, option: &str) -> Result<u64, String> {
     let parsed = value.parse::<u64>().map_err(|_| {
         usage(format!(
@@ -1301,6 +1551,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli ratio-realish <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --policy full-materialization|global-indexed|address-local|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N [--export-dir <path>] --format json|markdown",
         "  atlas-cli ratio-actors <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --actor-strategy no-actor|single-local|specialized-crud|over-agentic|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N --budget-bytes N [--cache on|off] [--export-dir <path>] --format json|markdown",
         "  atlas-cli ratio-actors-calibrate <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --mode standard|ambitious --runs N --queries N --radius-grid a,b --budget-grid a,b --cache-grid off,on --journal-grid lazy,compact --query-locality-grid clustered,random,mixed [--export-dir <path>] --format json|markdown",
+        "  atlas-cli ratio-fibers <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --fiber-strategy point-fiber|neighborhood-fiber|actor-fiber|actor-neighborhood-fiber|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N --budget-bytes N --journal eager|lazy|compact [--cache on|off] [--update-rate low|medium|high] [--audit-rate low|medium|high] [--export-dir <path>] --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

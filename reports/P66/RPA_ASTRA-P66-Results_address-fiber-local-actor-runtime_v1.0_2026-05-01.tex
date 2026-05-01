@@ -1,0 +1,383 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P66 Results -- Address-Fiber Local Actor Runtime},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+\newcommand{\SmallCode}[1]{\footnotesize\texttt{\detokenize{#1}}}
+
+\title{\textbf{ASTRA-P66 Results}\\Address-Fiber Local Actor Runtime}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P66 du repo \Code{astra-atlas-lang}. La trace
+vivante reste le rapport Markdown d'analyse P66. Ce document \LaTeX{}/PDF est
+le livrable Results fig\'e pour l'exp\'erience \Code{address-fiber}. Aucun
+r\'esultat nouveau n'est invent\'e ici.
+\end{abstract}
+
+\section{But de ASTRA-P66}
+
+P66 formalise le mod\`ele \Code{address-fiber}. L'espace virtuel est une base
+d'adresses; la donn\'ee utile est une fibre locale attach\'ee \`a une adresse.
+
+\[
+  x \in \Omega_{\mathrm{virtual}}, \qquad
+  F_x = \text{fibre locale attach\'ee \`a } x
+\]
+
+\[
+  Eval(c,x) = \text{g\'en\'eration contr\^ol\'ee de } F_x
+  \text{ ou de } F_{N(x,r)}
+\]
+
+Le runtime doit g\'en\'erer la fibre utile, ou un petit voisinage fibr\'e, sans
+mat\'erialiser l'espace global.
+
+\section{Position apr\`es P65-2}
+
+P65-2 a montr\'e que \Code{single_local_actor} peut obtenir des gains nets
+forts avec overhead calibr\'e sous 15\% sur certaines configurations. Les
+meilleures configurations P65-2 \'etaient:
+
+\begin{longtable}{@{}p{0.18\linewidth}p{0.45\linewidth}rrr@{}}
+\toprule
+Campagne & Configuration & Net gain & Overhead & Cache hit\\
+\midrule
+standard & \SmallCode{hybrid:r5:b2097152:cacheon:journalcompact:clustered} & 1.641752 & 0.084426 & 0.706238\\
+ambitious & \SmallCode{hybrid:r5:b4194304:cacheon:journalcompact:clustered} & 1.612142 & 0.121892 & 0.706251\\
+\bottomrule
+\end{longtable}
+
+P66 reprend cette direction, mais change le niveau d'analyse: l'acteur ne g\`ere
+plus seulement un voisinage abstrait, il g\`ere une fibre locale ou un voisinage
+fibr\'e.
+
+\section{Hypoth\`ese centrale: point d'adresse plus fibre locale}
+
+\begin{quote}
+L'adresse est un point dans l'espace virtuel. La donn\'ee utile est une fibre
+locale au-dessus de ce point. Le runtime doit g\'en\'erer la fibre utile, ou un
+voisinage fibr\'e, sans mat\'erialiser l'espace global.
+\end{quote}
+
+\section{Mod\`ele AddressFiber}
+
+Le mod\`ele \Code{AddressFiber} expose:
+
+\begin{itemize}
+  \item identifiant d'adresse et coordonn\'ee de base;
+  \item type de fibre;
+  \item unit\'es d\'eclar\'ees, atteignables, lisibles, modifiables, s\^ures,
+        effectives et g\'en\'er\'ees;
+  \item octets payload, index, cache, journal, audit et metadata;
+  \item liaison optionnelle \`a un acteur local;
+  \item statut de s\^uret\'e et raisons de d\'ecision.
+\end{itemize}
+
+Toute m\'emoire fibre/acteur est compt\'ee comme co\^ut r\'eel.
+
+\section{Strat\'egies fibre test\'ees}
+
+\begin{longtable}{@{}p{0.36\linewidth}p{0.54\linewidth}@{}}
+\toprule
+Strat\'egie & Interpr\'etation\\
+\midrule
+\Code{point_fiber_only} & g\'en\`ere uniquement \(F_x\)\\
+\Code{neighborhood_fiber} & g\'en\`ere \(F_{N(x,r)}\) sans acteur persistant\\
+\Code{actor_managed_fiber} & un acteur d\'eterministe g\`ere \(F_x\)\\
+\Code{actor_managed_neighborhood_fiber} & un acteur d\'eterministe g\`ere \(F_{N(x,r)}\)\\
+\bottomrule
+\end{longtable}
+
+\section{Impl\'ementation repo-first}
+
+P66 ajoute:
+
+\begin{itemize}
+  \item \Code{src/p66.rs};
+  \item la commande \Code{ratio-fibers};
+  \item les exports compacts P66: JSON, JSONL, Markdown et CSV;
+  \item les tests P66;
+  \item le rapport d'analyse Markdown P66;
+  \item le livrable Results \LaTeX{}/PDF P66.
+\end{itemize}
+
+Aucun changement de grammaire \Code{.atlas} n'est introduit.
+
+\section{Validation locale}
+
+\begin{longtable}{@{}p{0.68\linewidth}r@{}}
+\toprule
+Commande / gate & Statut\\
+\midrule
+\Code{cargo fmt --all -- --check} & PASS\\
+\Code{cargo build --workspace} & PASS\\
+\Code{cargo test --workspace} & PASS\\
+\Code{cargo test --test p65_tests} & PASS, 18 tests\\
+\Code{cargo test --test p66_tests} & PASS, 11 tests\\
+\Code{bash scripts/validate_p58_local.sh} & PASS\\
+Corpus invalide & PASS, 21/21 refus\'e\\
+\Code{git diff --check} & PASS\\
+\bottomrule
+\end{longtable}
+
+\section{Campagne standard}
+
+Param\`etres:
+
+\begin{itemize}
+  \item runs: 30;
+  \item queries: 1000;
+  \item rayon: 3;
+  \item budget: 2\,097\,152 bytes;
+  \item cache: on;
+  \item journal: compact;
+  \item dur\'ee observ\'ee: \Code{real 0.28s}.
+\end{itemize}
+
+\begin{longtable}{@{}p{0.26\linewidth}p{0.22\linewidth}rrrrr@{}}
+\toprule
+Workload & Best strategy & Ratio & Selectivity & Overhead & Net gain & Bytes\\
+\midrule
+\Code{realish_log_events} & \Code{actor_managed_fiber} & 3.967310 & 0.001500 & 0.302117 & 3.602743 & 798\,526\\
+\Code{realish_sparse_csv} & \Code{actor_managed_fiber} & 7.568229 & 0.000750 & 0.291075 & 4.237254 & 837\,184\\
+\Code{realish_json_records} & \Code{actor_managed_fiber} & 2.436762 & 0.002000 & 0.303644 & 4.085486 & 794\,497\\
+\Code{realish_hybrid_field_fixture} & \Code{actor_managed_fiber} & 9.645586 & 0.000844 & 0.281008 & 5.575348 & 875\,841\\
+\bottomrule
+\end{longtable}
+
+Vue agr\'eg\'ee standard:
+
+\begin{longtable}{@{}p{0.55\linewidth}r@{}}
+\toprule
+M\'etrique & Valeur\\
+\midrule
+\Code{fiber_generated_units} & 124\,000\\
+\Code{fiber_effective_units} & 19\,888\,000\\
+\Code{total_persisted_bytes} & 3\,306\,048\\
+\Code{total_ratio_effective_per_byte} & 6.015642\\
+\Code{average_actor_overhead_ratio} & 0.294461\\
+\Code{average_address_fiber_net_gain} & 4.375208\\
+\Code{update_count} & 13\,500\\
+\Code{audit_count} & 3\,300\\
+\Code{compaction_count} & 504\\
+\bottomrule
+\end{longtable}
+
+\section{Campagne ambitious}
+
+Param\`etres:
+
+\begin{itemize}
+  \item runs: 50;
+  \item queries: 5000;
+  \item rayon: 5;
+  \item budget: 4\,194\,304 bytes;
+  \item cache: on;
+  \item journal: compact;
+  \item dur\'ee observ\'ee: \Code{real 0.31s}.
+\end{itemize}
+
+\begin{longtable}{@{}p{0.26\linewidth}p{0.22\linewidth}rrrrr@{}}
+\toprule
+Workload & Best strategy & Ratio & Selectivity & Overhead & Net gain & Bytes\\
+\midrule
+\Code{realish_log_events} & \Code{actor_managed_fiber} & 0.565347 & 0.007500 & 0.253635 & 4.089019 & 5\,603\,640\\
+\Code{realish_sparse_csv} & \Code{actor_managed_fiber} & 1.091486 & 0.003750 & 0.248316 & 4.854740 & 5\,804\,930\\
+\Code{realish_json_records} & \Code{actor_managed_fiber} & 0.346736 & 0.010000 & 0.254547 & 4.623061 & 5\,583\,498\\
+\Code{realish_hybrid_field_fixture} & \Code{actor_managed_fiber} & 1.406542 & 0.004219 & 0.243353 & 6.439436 & 6\,006\,219\\
+\bottomrule
+\end{longtable}
+
+Vue agr\'eg\'ee ambitious:
+
+\begin{longtable}{@{}p{0.55\linewidth}r@{}}
+\toprule
+M\'etrique & Valeur\\
+\midrule
+\Code{fiber_generated_units} & 620\,000\\
+\Code{fiber_effective_units} & 19\,888\,000\\
+\Code{total_persisted_bytes} & 22\,998\,287\\
+\Code{total_ratio_effective_per_byte} & 0.864760\\
+\Code{average_actor_overhead_ratio} & 0.249963\\
+\Code{average_address_fiber_net_gain} & 5.001564\\
+\Code{update_count} & 112\,500\\
+\Code{audit_count} & 27\,500\\
+\Code{compaction_count} & 2\,504\\
+\bottomrule
+\end{longtable}
+
+\section{Comparaison des strat\'egies fibre}
+
+\begin{longtable}{@{}p{0.25\linewidth}rrrrp{0.18\linewidth}@{}}
+\toprule
+Workload & Point & Neighborhood & Actor fiber & Actor neighborhood & Best\\
+\midrule
+\Code{log_events} & 1.618457 & 3.037811 & 3.967310 & 1.287877 & \Code{actor_fiber}\\
+\Code{sparse_csv} & 3.013378 & 5.397226 & 7.568229 & 2.446707 & \Code{actor_fiber}\\
+\Code{json_records} & 0.997276 & 1.737498 & 2.436762 & 0.773780 & \Code{actor_fiber}\\
+\Code{hybrid_field} & 3.758308 & 5.891441 & 9.645586 & 3.106634 & \Code{actor_fiber}\\
+\bottomrule
+\end{longtable}
+
+La m\^eme hi\'erarchie est observ\'ee en ambitious: \Code{actor_managed_fiber}
+est la meilleure strat\'egie sur les quatre workloads.
+
+\section{Analyse overhead acteur-fibre}
+
+Le signal P66 est double:
+
+\begin{itemize}
+  \item \Code{actor_managed_fiber} domine les strat\'egies fibre en ratio;
+  \item son overhead reste trop \'elev\'e pour une promotion scientifique.
+\end{itemize}
+
+Overhead observ\'e:
+
+\begin{itemize}
+  \item standard: 0.281008 \`a 0.303644;
+  \item ambitious: 0.243353 \`a 0.254547;
+  \item cible candidate P65-2: \(< 0.15\).
+\end{itemize}
+
+\section{Analyse CRUD / audit / compaction}
+
+P66 compte explicitement update, audit et compaction:
+
+\begin{longtable}{@{}p{0.32\linewidth}rrr@{}}
+\toprule
+Campagne & Updates & Audits & Compactions\\
+\midrule
+standard best entries & 13\,500 & 3\,300 & 504\\
+ambitious best entries & 112\,500 & 27\,500 & 2\,504\\
+\bottomrule
+\end{longtable}
+
+Les meilleures entr\'ees ont:
+
+\begin{itemize}
+  \item conflicts = 0;
+  \item stale reads = 0;
+  \item update success rate = 1.0;
+  \item audit success rate = 1.0.
+\end{itemize}
+
+\section{Vue ratio/gain}
+
+\begin{verbatim}
+Address-fiber view
+base address count              : 1000 standard / 5000 ambitious
+best fiber strategy             : actor_managed_fiber
+standard fiber generated units  : 124,000
+standard fiber effective units  : 19,888,000
+standard persisted bytes        : 3,306,048
+standard ratio effective/byte   : 6.015642
+standard avg actor overhead     : 0.294461
+standard avg net gain           : 4.375208
+
+ambitious fiber generated units : 620,000
+ambitious fiber effective units : 19,888,000
+ambitious persisted bytes       : 22,998,287
+ambitious ratio effective/byte  : 0.864760
+ambitious avg actor overhead    : 0.249963
+ambitious avg net gain          : 5.001564
+decision                        : RECALIBRATE_P66_ADDRESS_FIBER_MODEL
+\end{verbatim}
+
+\section{D\'ecision}
+
+D\'ecision repo:
+
+\[
+  \Decision{VALIDER_IMPL_P66_ADDRESS_FIBER_RUNTIME}
+\]
+
+D\'ecision scientifique:
+
+\[
+  \Decision{RECALIBRATE_P66_ADDRESS_FIBER_MODEL}
+\]
+
+\Code{PROMOTE_P66_ADDRESS_FIBER_ARCHITECTURE} n'est pas atteint, car
+l'overhead acteur-fibre reste au-dessus du seuil candidat.
+
+\section{Ce que P66 \'etablit}
+
+\begin{itemize}
+  \item Le mod\`ele address-fiber est impl\'ement\'e et test\'e.
+  \item \Code{actor_managed_fiber} domine les strat\'egies fibre sur les quatre
+        workloads.
+  \item Les m\'etriques CRUD/audit/compaction sont compt\'ees.
+  \item Les conflits et stale reads restent \`a 0 sur les meilleures entr\'ees.
+\end{itemize}
+
+\section{Ce que P66 ne prouve pas encore}
+
+\begin{itemize}
+  \item P66 ne valide pas scientifiquement l'architecture finale.
+  \item Les workloads restent internes et d\'eterministes.
+  \item Il n'y a pas de dataset externe ni de r\'ep\'etition multi-machine.
+  \item L'overhead acteur-fibre reste trop haut.
+\end{itemize}
+
+\section{Recommandation P67}
+
+P67 devrait porter sur:
+
+\begin{itemize}
+  \item r\'eduction de l'overhead \Code{actor_managed_fiber};
+  \item reprise de la grille de calibration P65-2 au niveau fibre;
+  \item gates standard+ambitious formels;
+  \item stress cache/journal/compaction;
+  \item r\'ep\'etition multi-machine avant promotion scientifique.
+\end{itemize}
+
+\section{Conclusion}
+
+P66 est un jalon conceptuel et syst\`eme important: l'adresse devient un point,
+la donn\'ee utile devient une fibre locale, et le runtime mesure le co\^ut de
+g\'en\'erer et g\'erer cette fibre. Le meilleur signal est
+\Code{actor_managed_fiber}; la limite bloquante reste l'overhead.
+
+\section{Journal d'it\'eration}
+
+\begin{itemize}
+  \item 2026-05-01: ajout de \Code{src/p66.rs};
+  \item 2026-05-01: ajout de \Code{ratio-fibers};
+  \item 2026-05-01: campagnes standard et ambitious locales;
+  \item 2026-05-01: tests P66 et validation locale;
+  \item 2026-05-01: g\'en\'eration du Results \LaTeX{}/PDF P66.
+\end{itemize}
+
+\end{document}

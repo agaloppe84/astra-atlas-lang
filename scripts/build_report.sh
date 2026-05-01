@@ -58,7 +58,11 @@ tectonic_bin="$(find_tectonic)"
 
 if [ -n "$tectonic_bin" ]; then
   echo "compiler: tectonic"
-  "$tectonic_bin" "$tex_path"
+  if [ -n "${ASTRA_TECTONIC_BUNDLE:-}" ]; then
+    "$tectonic_bin" --bundle "$ASTRA_TECTONIC_BUNDLE" "$tex_path"
+  else
+    "$tectonic_bin" "$tex_path"
+  fi
   cwd_pdf="$(pwd)/$tex_base.pdf"
   if [ ! -f "$pdf_path" ] && [ -f "$cwd_pdf" ]; then
     mv "$cwd_pdf" "$pdf_path"
