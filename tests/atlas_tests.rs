@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 28] {
+fn invalid_cases() -> [InvalidCase; 33] {
     [
         InvalidCase {
             name: "bad_version",
@@ -232,6 +232,46 @@ fn invalid_cases() -> [InvalidCase; 28] {
         InvalidCase {
             name: "p69_contract_unknown_reference",
             text: include_str!("../examples/invalid/p69_contract_unknown_reference.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p70_cache_unaccounted",
+            text: include_str!("../examples/invalid/p70_cache_unaccounted.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p70_journal_unaccounted",
+            text: include_str!("../examples/invalid/p70_journal_unaccounted.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p70_actor_state_unaccounted",
+            text: include_str!("../examples/invalid/p70_actor_state_unaccounted.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p70_missing_audit_metadata",
+            text: include_str!("../examples/invalid/p70_missing_audit_metadata.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p69_contract'",
+        },
+        InvalidCase {
+            name: "p70_hidden_storage_risk_high",
+            text: include_str!("../examples/invalid/p70_hidden_storage_risk_high.atlas"),
             code: DiagnosticCode::ParseError,
             family: None,
             field: None,

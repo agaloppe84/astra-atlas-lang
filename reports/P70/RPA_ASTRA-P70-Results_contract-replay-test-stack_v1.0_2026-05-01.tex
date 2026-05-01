@@ -1,0 +1,285 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P70 Results -- Contract Replay and Test Stack},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\renewcommand{\arraystretch}{1.15}
+\emergencystretch=3em
+\sloppy
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\Decision}[1]{\textbf{\texttt{\detokenize{#1}}}}
+
+\title{\textbf{ASTRA-P70 Results}\\Contract Replay and Test Stack Hygiene}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport fige les r\'esultats P70 du repo \Code{astra-atlas-lang}. P70 ajoute
+un replay contractuel du contrat P69, une comparaison bytes declares vs bytes
+mesures par replay, une detection de drift, et une regle d'hygiene de la stack
+de tests Rust. Le rapport Markdown d'analyse reste la trace vivante.
+\end{abstract}
+
+\section{But de ASTRA-P70}
+
+P70 verifie que ce que le contrat P69 declare stocker reste coherent avec ce
+que le runtime paie dans un replay deterministe multi-fixture. Le sprint ajoute
+aussi une regle de process: chaque jalon repo-first audite la stack de tests
+Rust locale.
+
+\section{Position apres P69}
+
+P69 a promu le contrat de representation address-fiber:
+
+\begin{itemize}
+  \item \Code{parse_ok = true};
+  \item \Code{typecheck_ok = true};
+  \item \Code{all_storage_counted = true};
+  \item \Code{hidden_storage_risk = low};
+  \item \Code{total_contract_bytes = 176128};
+  \item \Code{virtual_effective_units = 8448000};
+  \item \Code{contract_ratio_effective_per_byte = 47.965116};
+  \item invalides P69: 7/7 refuses;
+  \item decision: \Decision{PROMOTE_P69_ADDRESS_FIBER_CONTRACT_RUNTIME}.
+\end{itemize}
+
+\section{Regle Test Stack Hygiene}
+
+A partir de P70, chaque jalon repo-first doit documenter:
+
+\begin{itemize}
+  \item les tests qui protegent encore un invariant vivant;
+  \item les tests historiques conserves comme non-regression;
+  \item les tests obsoletes, redondants ou trompeurs;
+  \item les tests supprimes, fusionnes ou recalibres, avec justification.
+\end{itemize}
+
+\section{Audit des tests}
+
+\begin{longtable}{@{}p{0.48\linewidth}r@{}}
+\toprule
+Statut & Nombre \\
+\midrule
+\endhead
+\Code{KEEP} & 4 \\
+\Code{UPDATE} & 1 \\
+\Code{MERGE} & 0 \\
+\Code{DELETE} & 0 \\
+\Code{HISTORICAL_NON_REGRESSION} & 10 \\
+\bottomrule
+\end{longtable}
+
+Actions realisees:
+
+\begin{itemize}
+  \item ajout de \Code{tests/p70_tests.rs};
+  \item mise a jour de \Code{tests/atlas_tests.rs} pour les invalides P70;
+  \item aucune suppression de test;
+  \item conservation des tests historiques P57--P69.
+\end{itemize}
+
+\section{Replay contractuel}
+
+Commande principale:
+
+\begin{verbatim}
+cargo run -p atlas-cli -- contract-replay \
+  examples/valid/p69_address_fiber_contract.atlas \
+  --fixtures all --mode standard --runs 30 --queries 1000 \
+  --tolerance-percent 5.0 \
+  --export-dir artifacts/p70/contract_replay_standard \
+  --format json
+\end{verbatim}
+
+Le replay produit:
+
+\begin{itemize}
+  \item \Code{p70_contract_replay_report.json};
+  \item \Code{p70_contract_replay_fixtures.jsonl};
+  \item \Code{p70_contract_replay_drift.csv};
+  \item \Code{p70_contract_replay_summary.md}.
+\end{itemize}
+
+\section{Fixtures}
+
+\begin{itemize}
+  \item \Code{log_event_fiber_replay};
+  \item \Code{sparse_row_fiber_replay};
+  \item \Code{json_record_fiber_replay};
+  \item \Code{hybrid_field_tile_fiber_replay}.
+\end{itemize}
+
+\section{Declared vs measured bytes}
+
+\begin{longtable}{@{}p{0.52\linewidth}r@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\endhead
+\Code{fixture_count} & 4 \\
+\Code{declared_contract_bytes} & 176,128 \\
+\Code{measured_runtime_bytes_min} & 177,664 \\
+\Code{measured_runtime_bytes_median} & 180,224 \\
+\Code{measured_runtime_bytes_max} & 182,272 \\
+\Code{max_byte_delta} & 6,144 \\
+\Code{max_byte_delta_percent} & 3.488372 \\
+\Code{tolerance_percent} & 5.000000 \\
+\bottomrule
+\end{longtable}
+
+\section{Resultats par fixture}
+
+\begin{longtable}{@{}p{0.18\linewidth}r r r p{0.12\linewidth}@{}}
+\toprule
+Fixture & Declared & Measured & Delta \% & Drift \\
+\midrule
+\endhead
+\Code{log} & 176,128 & 177,664 & 0.872093 & NO \\
+\Code{sparse} & 176,128 & 180,224 & 2.325581 & NO \\
+\Code{json} & 176,128 & 182,272 & 3.488372 & NO \\
+\Code{hybrid} & 176,128 & 178,176 & 1.162791 & NO \\
+\bottomrule
+\end{longtable}
+
+\section{Drift detector}
+
+Statuts possibles:
+
+\begin{itemize}
+  \item \Code{NO_DRIFT};
+  \item \Code{WARN_DRIFT};
+  \item \Code{HARD_DRIFT};
+  \item \Code{INVALID_CONTRACT}.
+\end{itemize}
+
+Resultat local:
+
+\begin{center}
+\Code{NO_DRIFT}
+\end{center}
+
+\section{Invalides P70}
+
+P70 ajoute cinq mutants de drift contractuel:
+
+\begin{itemize}
+  \item \Code{p70_cache_unaccounted.atlas};
+  \item \Code{p70_journal_unaccounted.atlas};
+  \item \Code{p70_actor_state_unaccounted.atlas};
+  \item \Code{p70_missing_audit_metadata.atlas};
+  \item \Code{p70_hidden_storage_risk_high.atlas}.
+\end{itemize}
+
+Ils sont tous refuses localement.
+
+\section{Validation locale}
+
+\begin{longtable}{@{}p{0.52\linewidth}p{0.16\linewidth}p{0.24\linewidth}@{}}
+\toprule
+Commande & Statut & Sortie importante \\
+\midrule
+\endhead
+\Code{cargo fmt --all -- --check} & PASS & formatage OK \\
+\Code{cargo build --workspace} & PASS & workspace build OK \\
+\Code{cargo test --workspace} & PASS & suite complete OK \\
+\Code{cargo test --test p70_tests} & PASS & 13 tests passes \\
+\Code{cargo test --test p69_tests} & PASS & 8 tests passes \\
+\Code{bash scripts/validate_p58_local.sh} & PASS & 33 invalides refuses \\
+\Code{contract-replay standard} & PASS & real 0.28s \\
+\bottomrule
+\end{longtable}
+
+\section{Vue P70}
+
+\begin{verbatim}
+contract path                  : p69_address_fiber_contract.atlas
+fixtures                       : 4
+declared contract bytes         : 176128
+measured bytes min/med/max      : 177664 / 180224 / 182272
+delta percent                  : max 3.488372
+accounted storage ratio         : 1.000000
+hidden storage risk             : low
+drift status                   : NO_DRIFT
+tests kept / updated / deleted  : 4 / 1 / 0
+decision : RECALIBRATE_P70_CONTRACT_DRIFT
+\end{verbatim}
+
+\section{Decision P70}
+
+\begin{center}
+\Decision{RECALIBRATE_P70_CONTRACT_DRIFT}
+\end{center}
+
+La decision reste conservatrice: aucun hard drift n'est observe, mais le replay
+P70 est la premiere couche contract-bound et ne suffit pas encore pour une
+validation scientifique finale.
+
+\section{Ce que P70 etablit}
+
+\begin{itemize}
+  \item le contrat P69 peut etre rejoue sur quatre fixtures;
+  \item les deltas declared-vs-measured restent sous 5\%;
+  \item les invalides de drift sont refuses;
+  \item la stack de tests est auditee et versionnee;
+  \item les exports locaux restent ignores par Git.
+\end{itemize}
+
+\section{Ce que P70 ne prouve pas encore}
+
+\begin{itemize}
+  \item pas de replay multi-machine;
+  \item pas de datasets externes;
+  \item pas de mesure filesystem pour chaque categorie de stockage;
+  \item pas de validation finale de tous les contrats futurs.
+\end{itemize}
+
+\section{Recommandation P71}
+
+P71 devrait ajouter des replays contractuels externalises:
+
+\begin{itemize}
+  \item comparer bytes declares et artefacts filesystem generes;
+  \item rejouer plusieurs contrats valides;
+  \item garder les mutants P70 comme gates;
+  \item documenter quels tests sont local-only et lesquels restent CI sanity.
+\end{itemize}
+
+\section{Journal d'iteration}
+
+\begin{itemize}
+  \item ajout de \Code{src/p70.rs};
+  \item ajout de \Code{contract-replay};
+  \item ajout de cinq invalides P70;
+  \item ajout de \Code{tests/p70_tests.rs};
+  \item ajout de l'audit de stack de tests;
+  \item generation du present Results \LaTeX{}/PDF.
+\end{itemize}
+
+\end{document}

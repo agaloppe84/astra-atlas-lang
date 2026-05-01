@@ -276,6 +276,30 @@ la syntaxe contractuelle
 et le rapport d'analyse
 [docs/analysis/ASTRA-P69-address-fiber-representation-contract-analysis.md](docs/analysis/ASTRA-P69-address-fiber-representation-contract-analysis.md).
 
+## Validation P70 contract replay et test stack
+
+P70 ajoute `contract-replay` pour rejouer le contrat P69 sur plusieurs fixtures
+address-fiber et comparer bytes declares vs bytes mesures par replay. P70 ajoute
+aussi la regle d'audit de la stack de tests Rust a chaque jalon repo-first.
+
+```bash
+cargo run -p atlas-cli -- contract-replay examples/valid/p69_address_fiber_contract.atlas \
+  --fixtures all \
+  --mode standard \
+  --runs 30 \
+  --queries 1000 \
+  --tolerance-percent 5.0 \
+  --export-dir artifacts/p70/contract_replay_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p70/` et sont ignores par Git. Voir
+[docs/validation/astra-p70-contract-replay-test-stack.md](docs/validation/astra-p70-contract-replay-test-stack.md),
+l'audit de tests
+[docs/analysis/ASTRA-P70-test-stack-audit.md](docs/analysis/ASTRA-P70-test-stack-audit.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P70-contract-replay-test-stack-analysis.md](docs/analysis/ASTRA-P70-contract-replay-test-stack-analysis.md).
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

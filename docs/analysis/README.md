@@ -41,6 +41,13 @@ repo.
   limites et la recommandation suivante.
 - Garder les fichiers compacts et versionnables.
 
+## Test stack hygiene
+
+A partir de P70, chaque jalon repo-first doit inclure un audit de la stack de
+tests Rust locale. Les tests obsoletes, redondants ou trompeurs doivent etre
+supprimes, fusionnes ou recalibres avec justification. Les tests historiques qui
+protegent encore un invariant reel restent des non-regressions versionnees.
+
 ## Results LaTeX/PDF
 
 Le rapport Markdown d'analyse reste la trace vivante. Le `.tex` et le `.pdf`

@@ -39,3 +39,6 @@ artifacts/p68/
 
 # P69 local representation contract exports
 artifacts/p69/
+
+# P70 local contract replay exports
+artifacts/p70/

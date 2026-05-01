@@ -11,7 +11,7 @@ use crate::{
     P65QueryLocality, P65RatioActorsOptions, P66JournalPolicy, P66RateProfile,
     P66RatioFibersOptions, P67AuditPolicy, P67CachePolicy, P67CompactionPolicy,
     P67FiberCalibrationOptions, P67FiberProjectionDepth, P67QueryLocality, P68PromotionOptions,
-    P69ContractRunOptions, WorkloadMode,
+    P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, WorkloadMode,
 };
 use std::env;
 
@@ -66,6 +66,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "ratio-fibers-promote" => ratio_fibers_promote_command(args),
         "contract-check" => contract_check_command(args),
         "contract-run" => contract_run_command(args),
+        "contract-replay" => contract_replay_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -461,6 +462,24 @@ fn contract_run_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn contract_replay_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("contract-replay requires a .atlas path"))?;
+    let options = parse_p70_contract_replay_options(&args[2..])?;
+    let report = crate::p70_contract_replay_report_file(path, options.options)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    if let Some(export_dir) = &options.export_dir {
+        crate::write_p70_contract_replay_exports(&report, export_dir)
+            .map_err(|diagnostic| diagnostic.to_string())?;
+    }
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p70_contract_replay_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p70_contract_replay_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -534,6 +553,13 @@ struct P68PromotionCliOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct P69ContractRunCliOptions {
     options: P69ContractRunOptions,
+    export_dir: Option<String>,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P70ContractReplayCliOptions {
+    options: P70ContractReplayOptions,
     export_dir: Option<String>,
     format: OutputFormat,
 }
@@ -1843,6 +1869,137 @@ fn parse_p69_contract_run_options(args: &[String]) -> Result<P69ContractRunCliOp
     })
 }
 
+fn parse_p70_contract_replay_options(
+    args: &[String],
+) -> Result<P70ContractReplayCliOptions, String> {
+    let mut fixtures = None;
+    let mut mode = None;
+    let mut runs = None;
+    let mut queries = None;
+    let mut tolerance_percent = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--fixtures" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-replay requires a value after --fixtures"))?;
+            fixtures = Some(parse_p70_fixtures(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--fixtures=") {
+            fixtures = Some(parse_p70_fixtures(value)?);
+            idx += 1;
+        } else if arg == "--mode" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-replay requires a value after --mode"))?;
+            mode = Some(parse_mode_value(value, "contract-replay")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--mode=") {
+            mode = Some(parse_mode_value(value, "contract-replay")?);
+            idx += 1;
+        } else if arg == "--runs" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-replay requires a value after --runs"))?;
+            runs = Some(parse_positive_usize(value, "contract-replay", "--runs")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--runs=") {
+            runs = Some(parse_positive_usize(value, "contract-replay", "--runs")?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-replay requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(value, "contract-replay", "--queries")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(value, "contract-replay", "--queries")?);
+            idx += 1;
+        } else if arg == "--tolerance-percent" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("contract-replay requires a value after --tolerance-percent")
+            })?;
+            tolerance_percent = Some(parse_positive_f64(
+                value,
+                "contract-replay",
+                "--tolerance-percent",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--tolerance-percent=") {
+            tolerance_percent = Some(parse_positive_f64(
+                value,
+                "contract-replay",
+                "--tolerance-percent",
+            )?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-replay requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("contract-replay requires a value after --format"))?;
+            format = Some(parse_format_value(value, "contract-replay")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "contract-replay")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "contract-replay received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P70ContractReplayCliOptions {
+        options: P70ContractReplayOptions {
+            fixtures: fixtures.ok_or_else(|| {
+                usage("contract-replay requires --fixtures all|log|sparse|json|hybrid")
+            })?,
+            mode: mode
+                .ok_or_else(|| usage("contract-replay requires --mode smoke|standard|ambitious"))?,
+            runs: runs.ok_or_else(|| usage("contract-replay requires --runs N"))?,
+            queries: queries.ok_or_else(|| usage("contract-replay requires --queries N"))?,
+            tolerance_percent: tolerance_percent
+                .ok_or_else(|| usage("contract-replay requires --tolerance-percent N"))?,
+        },
+        export_dir,
+        format: format.ok_or_else(|| usage("contract-replay requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p70_fixtures(value: &str) -> Result<Vec<P70ReplayFixtureKind>, String> {
+    if value == "all" {
+        return Ok(crate::p70_all_fixture_kinds());
+    }
+    let mut fixtures = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        let fixture = P70ReplayFixtureKind::from_str(item).ok_or_else(|| {
+            usage(format!(
+                "contract-replay received unsupported fixture '{}'; expected all|log|sparse|json|hybrid",
+                item
+            ))
+        })?;
+        fixtures.push(fixture);
+    }
+    if fixtures.is_empty() {
+        return Err(usage("contract-replay requires non-empty --fixtures"));
+    }
+    Ok(fixtures)
+}
+
 fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
     match value {
         "true" | "on" | "yes" => Ok(true),
@@ -1862,6 +2019,22 @@ fn parse_positive_u64(value: &str, command: &str, option: &str) -> Result<u64, S
         ))
     })?;
     if parsed == 0 {
+        return Err(usage(format!(
+            "{} requires {} greater than zero",
+            command, option
+        )));
+    }
+    Ok(parsed)
+}
+
+fn parse_positive_f64(value: &str, command: &str, option: &str) -> Result<f64, String> {
+    let parsed = value.parse::<f64>().map_err(|_| {
+        usage(format!(
+            "{} received invalid {} '{}'",
+            command, option, value
+        ))
+    })?;
+    if !parsed.is_finite() || parsed <= 0.0 {
         return Err(usage(format!(
             "{} requires {} greater than zero",
             command, option
@@ -2161,6 +2334,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli ratio-fibers-promote <file.atlas> [--run-ablations] [--run-stress] [--phase-map] [--mode-pair standard,ambitious] [--strict true|false] [--export-dir <path>] --format json|markdown",
         "  atlas-cli contract-check <file.atlas> --format json",
         "  atlas-cli contract-run <file.atlas> --mode smoke|standard|ambitious --runs N --queries N [--export-dir <path>] --format json|markdown",
+        "  atlas-cli contract-replay <file.atlas> --fixtures all|log|sparse|json|hybrid --mode smoke|standard|ambitious --runs N --queries N --tolerance-percent N [--export-dir <path>] --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }
