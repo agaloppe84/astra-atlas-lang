@@ -1,8 +1,8 @@
 use astra_atlas_lang::{
     p63_campaign_compare_json_files, p63_campaign_register_json_file,
-    p63_campaign_report_file_with_runs, p63_campaign_set_summary_json_file,
-    p63_campaign_summary_json_file, write_p63_campaign_exports, P63Decision, P63StabilityStatus,
-    P63ThresholdProfile, WorkloadMode,
+    p63_campaign_report_file_with_runs, p63_campaign_report_to_json,
+    p63_campaign_set_summary_json_file, p63_campaign_summary_json_file, write_p63_campaign_exports,
+    P63Decision, P63StabilityStatus, P63ThresholdProfile, WorkloadMode,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -86,6 +86,52 @@ fn p63_robust_summary_contains_expected_statistics() {
     assert!(read_p99.min > 0.0);
     assert!(read_p99.min <= read_p99.median);
     assert!(read_p99.median <= read_p99.max);
+}
+
+#[test]
+fn p63_campaign_report_exposes_core_virtual_real_metrics() {
+    let report = p63_campaign_report_file_with_runs(
+        "examples/p53_strict.atlas",
+        WorkloadMode::Smoke,
+        2,
+        P63ThresholdProfile::P63,
+    )
+    .expect("p63 campaign report");
+
+    let metrics = &report.core_metrics;
+    assert!(metrics.virtual_declared_units >= metrics.virtual_reachable_units);
+    assert!(metrics.virtual_reachable_units >= metrics.virtual_readable_units);
+    assert!(metrics.virtual_readable_units >= metrics.virtual_updatable_units);
+    assert!(metrics.virtual_updatable_units >= metrics.virtual_safe_units);
+    assert!(metrics.virtual_safe_units >= metrics.virtual_effective_units);
+    assert!(metrics.virtual_effective_units > 0);
+    assert!(metrics.total_persisted_bytes > 0);
+    assert!(metrics.payload_file_bytes > 0);
+    assert!(metrics.index_file_bytes > 0);
+    assert!(metrics.journal_file_bytes > 0);
+    assert!(metrics.manifest_file_bytes > 0);
+    assert!(metrics.checksum_or_audit_bytes.unwrap_or(0) > 0);
+    assert_eq!(metrics.metadata_bytes, None);
+    assert_eq!(metrics.assumed_materialized_value_bytes, 8);
+    assert_eq!(
+        metrics.estimated_materialized_bytes,
+        metrics.virtual_declared_units * metrics.assumed_materialized_value_bytes
+    );
+    assert!(metrics.ratio_effective_per_byte > 0.0);
+    assert!(metrics.gain_vs_materialized > 0.0);
+    assert!(metrics.effective_gain_vs_materialized > 0.0);
+
+    let expected_ratio =
+        metrics.virtual_effective_units as f64 / metrics.total_persisted_bytes as f64;
+    assert!((metrics.ratio_effective_per_byte - expected_ratio).abs() < 0.000001);
+
+    let json = p63_campaign_report_to_json(&report);
+    assert!(json.contains("\"core_ratio_metrics\": {"));
+    assert!(json.contains("\"virtual_declared_units\":"));
+    assert!(json.contains("\"virtual_effective_units\":"));
+    assert!(json.contains("\"ratio_effective_per_byte\":"));
+    assert!(json.contains("\"gain_vs_materialized\":"));
+    assert!(json.contains("\"metadata_bytes\": null"));
 }
 
 #[test]
@@ -303,6 +349,8 @@ fn p63_campaign_registry_adds_campaigns_and_summarizes() {
     assert!(registry_one.contains("\"registry_version\": \"p63_registry_v1\""));
     assert!(registry_one.contains("\"astra_step\": \"P63\""));
     assert!(registry_one.contains("\"campaign_name\": \"standard_local_001\""));
+    assert!(registry_one.contains("\"virtual_effective_units\":"));
+    assert!(registry_one.contains("\"gain_vs_materialized\":"));
 
     let registry_two = p63_campaign_register_json_file(
         standard_b_dir
@@ -322,6 +370,8 @@ fn p63_campaign_registry_adds_campaigns_and_summarizes() {
     assert!(summary.contains("\"campaign_count\": 2"));
     assert!(summary.contains("\"modes\": ["));
     assert!(summary.contains("\"standard\""));
+    assert!(summary.contains("\"virtual_effective_units\":"));
+    assert!(summary.contains("\"gain_vs_materialized\":"));
     assert!(summary.contains("\"recommendation\":"));
 
     let _ = fs::remove_dir_all(root);
@@ -415,6 +465,12 @@ fn p63_campaign_set_summary_handles_standard_campaigns_conservatively() {
     assert!(summary.contains("\"threshold_profile\": \"p63_conservative_v1\""));
     assert!(summary.contains("\"campaign_count\": 2"));
     assert!(summary.contains("\"total_runs\": 4"));
+    assert!(summary.contains("\"virtual_declared_units\":"));
+    assert!(summary.contains("\"virtual_effective_units\":"));
+    assert!(summary.contains("\"total_persisted_bytes\":"));
+    assert!(summary.contains("\"ratio_effective_per_byte\":"));
+    assert!(summary.contains("\"gain_vs_materialized\":"));
+    assert!(summary.contains("\"effective_gain_vs_materialized\":"));
     assert!(summary.contains("\"intra_mode_set_status\": \"CAMPAIGN_SET_NOT_ENOUGH_DATA\""));
     assert!(summary.contains("\"set_decision\": \"RECALIBRATE_P63_THRESHOLDS\""));
     assert!(!summary.contains("VALIDATE_P63_MEASURED_RATIO_CALIBRATION"));

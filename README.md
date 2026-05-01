@@ -95,3 +95,6 @@ Prompt P63 ajoute aussi un registre local ignore par Git:
 puis `ratio-campaign-summary artifacts/p63/registry.json --format json`.
 Les campagnes standard comparables peuvent etre synthetisees avec
 `ratio-campaign-set-summary artifacts/p63/registry.json --mode standard --threshold-profile p63 --format json`.
+P63-v6 expose aussi les metriques coeur `virtual_*_units`,
+`ratio_effective_per_byte` et `gain_vs_materialized` dans les rapports de
+campagne et les syntheses de campaign set.

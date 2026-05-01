@@ -10,6 +10,8 @@ use std::process::Command;
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const ASSUMED_MATERIALIZED_VALUE_BYTES: u128 = 8;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum P63ThresholdProfile {
     P63,
@@ -172,6 +174,7 @@ pub struct P63CampaignReport {
     pub operation_count: usize,
     pub machine_metadata: P63MachineMetadata,
     pub summary: P63CampaignSummary,
+    pub core_metrics: P63CoreRatioMetrics,
     pub ratio_stability_status: P63StabilityStatus,
     pub bytes_stability_status: P63StabilityStatus,
     pub timing_stability_status: P63StabilityStatus,
@@ -181,6 +184,33 @@ pub struct P63CampaignReport {
     pub decision: P63Decision,
     pub decision_reasons: Vec<String>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct P63CoreRatioMetrics {
+    pub virtual_declared_units: u128,
+    pub virtual_reachable_units: u128,
+    pub virtual_readable_units: u128,
+    pub virtual_updatable_units: u128,
+    pub virtual_safe_units: u128,
+    pub virtual_effective_units: u128,
+    pub total_persisted_bytes: u64,
+    pub payload_file_bytes: u64,
+    pub index_file_bytes: u64,
+    pub journal_file_bytes: u64,
+    pub manifest_file_bytes: u64,
+    pub checksum_or_audit_bytes: Option<u64>,
+    pub metadata_bytes: Option<u64>,
+    pub ratio_declared_per_byte: f64,
+    pub ratio_reachable_per_byte: f64,
+    pub ratio_readable_per_byte: f64,
+    pub ratio_updatable_per_byte: f64,
+    pub ratio_safe_per_byte: f64,
+    pub ratio_effective_per_byte: f64,
+    pub assumed_materialized_value_bytes: u128,
+    pub estimated_materialized_bytes: u128,
+    pub gain_vs_materialized: f64,
+    pub effective_gain_vs_materialized: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -212,6 +242,7 @@ impl P63CampaignReport {
     ) -> Self {
         let threshold_profile_config = threshold_profile.spec();
         let summary = P63CampaignSummary::from_runs(&measured.runs, measured.operation_count);
+        let core_metrics = P63CoreRatioMetrics::from_p62_report(&measured);
         let stability = p63_stability(&summary, &threshold_profile_config);
         let decision = p63_decision(&summary, &measured, &threshold_profile_config, &stability);
         let decision_reasons =
@@ -231,6 +262,7 @@ impl P63CampaignReport {
             operation_count: measured.operation_count,
             machine_metadata: P63MachineMetadata::collect(),
             summary,
+            core_metrics,
             ratio_stability_status: stability.ratio,
             bytes_stability_status: stability.bytes,
             timing_stability_status: stability.timing,
@@ -246,6 +278,47 @@ impl P63CampaignReport {
                     .to_string(),
                 "no external dataset is included in this campaign export".to_string(),
             ],
+        }
+    }
+}
+
+impl P63CoreRatioMetrics {
+    fn from_p62_report(report: &P62RealRatioReport) -> Self {
+        let total_persisted_bytes = report.persisted_bytes.total();
+        let estimated_materialized_bytes = report
+            .virtual_declared
+            .saturating_mul(ASSUMED_MATERIALIZED_VALUE_BYTES);
+        let effective_materialized_bytes = report
+            .virtual_effective
+            .saturating_mul(ASSUMED_MATERIALIZED_VALUE_BYTES);
+
+        Self {
+            virtual_declared_units: report.virtual_declared,
+            virtual_reachable_units: report.virtual_reachable,
+            virtual_readable_units: report.virtual_readable,
+            virtual_updatable_units: report.virtual_updatable,
+            virtual_safe_units: report.virtual_safe,
+            virtual_effective_units: report.virtual_effective,
+            total_persisted_bytes,
+            payload_file_bytes: report.persisted_bytes.payload_file_bytes,
+            index_file_bytes: report.persisted_bytes.index_file_bytes,
+            journal_file_bytes: report.persisted_bytes.journal_file_bytes,
+            manifest_file_bytes: report.persisted_bytes.manifest_file_bytes,
+            checksum_or_audit_bytes: Some(report.persisted_bytes.audit_file_bytes),
+            metadata_bytes: None,
+            ratio_declared_per_byte: ratio_u128(report.virtual_declared, total_persisted_bytes),
+            ratio_reachable_per_byte: ratio_u128(report.virtual_reachable, total_persisted_bytes),
+            ratio_readable_per_byte: ratio_u128(report.virtual_readable, total_persisted_bytes),
+            ratio_updatable_per_byte: ratio_u128(report.virtual_updatable, total_persisted_bytes),
+            ratio_safe_per_byte: ratio_u128(report.virtual_safe, total_persisted_bytes),
+            ratio_effective_per_byte: ratio_u128(report.virtual_effective, total_persisted_bytes),
+            assumed_materialized_value_bytes: ASSUMED_MATERIALIZED_VALUE_BYTES,
+            estimated_materialized_bytes,
+            gain_vs_materialized: ratio_u128(estimated_materialized_bytes, total_persisted_bytes),
+            effective_gain_vs_materialized: ratio_u128(
+                effective_materialized_bytes,
+                total_persisted_bytes,
+            ),
         }
     }
 }
@@ -536,6 +609,12 @@ pub struct P63CampaignRegistryEntry {
     pub repeat_count: usize,
     pub median_ratio_effective_per_byte: f64,
     pub median_total_persisted_bytes: f64,
+    pub virtual_declared_units: u128,
+    pub virtual_effective_units: u128,
+    pub total_persisted_bytes: u64,
+    pub ratio_effective_per_byte: f64,
+    pub gain_vs_materialized: f64,
+    pub effective_gain_vs_materialized: f64,
     pub campaign_stability_status: String,
     pub decision: String,
     pub timestamp_utc: String,
@@ -550,6 +629,7 @@ impl P63CampaignRegistryEntry {
         let threshold_profile = extract_json_string(json, "threshold_profile_resolved")
             .or_else(|| extract_json_string(json, "threshold_profile"))
             .unwrap_or_default();
+        let core_metrics = extract_object_block(json, "core_ratio_metrics").unwrap_or("");
         let entry = Self {
             valid: true,
             campaign_id: extract_json_string(json, "campaign_id").unwrap_or_default(),
@@ -565,6 +645,21 @@ impl P63CampaignRegistryEntry {
             .unwrap_or(0.0),
             median_total_persisted_bytes: extract_metric_median(json, "total_persisted_bytes")
                 .unwrap_or(0.0),
+            virtual_declared_units: extract_json_number(core_metrics, "virtual_declared_units")
+                .unwrap_or(0.0) as u128,
+            virtual_effective_units: extract_json_number(core_metrics, "virtual_effective_units")
+                .unwrap_or(0.0) as u128,
+            total_persisted_bytes: extract_json_number(core_metrics, "total_persisted_bytes")
+                .unwrap_or(0.0) as u64,
+            ratio_effective_per_byte: extract_json_number(core_metrics, "ratio_effective_per_byte")
+                .unwrap_or(0.0),
+            gain_vs_materialized: extract_json_number(core_metrics, "gain_vs_materialized")
+                .unwrap_or(0.0),
+            effective_gain_vs_materialized: extract_json_number(
+                core_metrics,
+                "effective_gain_vs_materialized",
+            )
+            .unwrap_or(0.0),
             campaign_stability_status: extract_json_string(json, "campaign_stability_status")
                 .unwrap_or_default(),
             decision: extract_json_string(json, "decision").unwrap_or_default(),
@@ -607,6 +702,20 @@ impl P63CampaignRegistryEntry {
                 json,
                 "median_total_persisted_bytes",
             )?,
+            virtual_declared_units: extract_json_number(json, "virtual_declared_units")
+                .unwrap_or(0.0) as u128,
+            virtual_effective_units: extract_json_number(json, "virtual_effective_units")
+                .unwrap_or(0.0) as u128,
+            total_persisted_bytes: extract_json_number(json, "total_persisted_bytes").unwrap_or(0.0)
+                as u64,
+            ratio_effective_per_byte: extract_json_number(json, "ratio_effective_per_byte")
+                .unwrap_or(0.0),
+            gain_vs_materialized: extract_json_number(json, "gain_vs_materialized").unwrap_or(0.0),
+            effective_gain_vs_materialized: extract_json_number(
+                json,
+                "effective_gain_vs_materialized",
+            )
+            .unwrap_or(0.0),
             campaign_stability_status: extract_json_string(json, "campaign_stability_status")?,
             decision: extract_json_string(json, "decision")?,
             timestamp_utc: extract_json_string(json, "timestamp_utc")?,
@@ -659,6 +768,42 @@ fn registry_entry_json(entry: &P63CampaignRegistryEntry) -> String {
     out.push_str(&json_f64(
         "median_total_persisted_bytes",
         entry.median_total_persisted_bytes,
+        true,
+        2,
+    ));
+    out.push_str(&json_u128(
+        "virtual_declared_units",
+        entry.virtual_declared_units,
+        true,
+        2,
+    ));
+    out.push_str(&json_u128(
+        "virtual_effective_units",
+        entry.virtual_effective_units,
+        true,
+        2,
+    ));
+    out.push_str(&json_u64(
+        "total_persisted_bytes",
+        entry.total_persisted_bytes,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "ratio_effective_per_byte",
+        entry.ratio_effective_per_byte,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "gain_vs_materialized",
+        entry.gain_vs_materialized,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "effective_gain_vs_materialized",
+        entry.effective_gain_vs_materialized,
         true,
         2,
     ));
@@ -721,6 +866,18 @@ fn p63_campaign_registry_summary_json(campaigns: &[P63CampaignRegistryEntry]) ->
             true,
             6,
         ));
+        out.push_str(&json_u128(
+            "virtual_effective_units",
+            campaign.virtual_effective_units,
+            true,
+            6,
+        ));
+        out.push_str(&json_f64(
+            "gain_vs_materialized",
+            campaign.gain_vs_materialized,
+            true,
+            6,
+        ));
         out.push_str(&json_string(
             "campaign_stability_status",
             &campaign.campaign_stability_status,
@@ -761,6 +918,26 @@ fn p63_campaign_set_summary_json(set_name: &str, campaigns: &[P63CampaignRegistr
         .iter()
         .map(|campaign| campaign.median_total_persisted_bytes)
         .collect();
+    let virtual_declared_values: Vec<u128> = campaigns
+        .iter()
+        .map(|campaign| campaign.virtual_declared_units)
+        .collect();
+    let virtual_effective_values: Vec<u128> = campaigns
+        .iter()
+        .map(|campaign| campaign.virtual_effective_units)
+        .collect();
+    let total_persisted_bytes_values: Vec<u64> = campaigns
+        .iter()
+        .map(|campaign| campaign.total_persisted_bytes)
+        .collect();
+    let gain_vs_materialized_values: Vec<f64> = campaigns
+        .iter()
+        .map(|campaign| campaign.gain_vs_materialized)
+        .collect();
+    let effective_gain_vs_materialized_values: Vec<f64> = campaigns
+        .iter()
+        .map(|campaign| campaign.effective_gain_vs_materialized)
+        .collect();
     let campaign_count = campaigns.len();
     let total_runs = campaigns.iter().map(|campaign| campaign.repeat_count).sum();
     let stable_campaign_count = campaigns
@@ -782,6 +959,12 @@ fn p63_campaign_set_summary_json(set_name: &str, campaigns: &[P63CampaignRegistr
         .unwrap_or(0);
     let ratio_shift_percent_range = percent_range(&median_ratio_values);
     let bytes_shift_percent_range = percent_range(&median_bytes_values);
+    let virtual_declared_units = median_u128(&virtual_declared_values);
+    let virtual_effective_units = median_u128(&virtual_effective_values);
+    let total_persisted_bytes = median_u64(&total_persisted_bytes_values);
+    let gain_vs_materialized = median_f64(&gain_vs_materialized_values);
+    let effective_gain_vs_materialized = median_f64(&effective_gain_vs_materialized_values);
+    let ratio_effective_per_byte = ratio_u128(virtual_effective_units, total_persisted_bytes);
     let intra_mode_set_status = campaign_set_status(
         campaign_count,
         min_repeat_count,
@@ -852,6 +1035,36 @@ fn p63_campaign_set_summary_json(set_name: &str, campaigns: &[P63CampaignRegistr
             true,
             6,
         ));
+        out.push_str(&json_u128(
+            "virtual_declared_units",
+            campaign.virtual_declared_units,
+            true,
+            6,
+        ));
+        out.push_str(&json_u128(
+            "virtual_effective_units",
+            campaign.virtual_effective_units,
+            true,
+            6,
+        ));
+        out.push_str(&json_u64(
+            "total_persisted_bytes",
+            campaign.total_persisted_bytes,
+            true,
+            6,
+        ));
+        out.push_str(&json_f64(
+            "gain_vs_materialized",
+            campaign.gain_vs_materialized,
+            true,
+            6,
+        ));
+        out.push_str(&json_f64(
+            "effective_gain_vs_materialized",
+            campaign.effective_gain_vs_materialized,
+            true,
+            6,
+        ));
         out.push_str(&json_string(
             "campaign_stability_status",
             &campaign.campaign_stability_status,
@@ -876,6 +1089,77 @@ fn p63_campaign_set_summary_json(set_name: &str, campaigns: &[P63CampaignRegistr
         true,
         2,
     );
+    u128_array_json(
+        &mut out,
+        "virtual_declared_values",
+        &virtual_declared_values,
+        true,
+        2,
+    );
+    u128_array_json(
+        &mut out,
+        "virtual_effective_values",
+        &virtual_effective_values,
+        true,
+        2,
+    );
+    u64_array_json(
+        &mut out,
+        "total_persisted_bytes_values",
+        &total_persisted_bytes_values,
+        true,
+        2,
+    );
+    f64_array_json(
+        &mut out,
+        "gain_vs_materialized_values",
+        &gain_vs_materialized_values,
+        true,
+        2,
+    );
+    f64_array_json(
+        &mut out,
+        "effective_gain_vs_materialized_values",
+        &effective_gain_vs_materialized_values,
+        true,
+        2,
+    );
+    out.push_str(&json_u128(
+        "virtual_declared_units",
+        virtual_declared_units,
+        true,
+        2,
+    ));
+    out.push_str(&json_u128(
+        "virtual_effective_units",
+        virtual_effective_units,
+        true,
+        2,
+    ));
+    out.push_str(&json_u64(
+        "total_persisted_bytes",
+        total_persisted_bytes,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "ratio_effective_per_byte",
+        ratio_effective_per_byte,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "gain_vs_materialized",
+        gain_vs_materialized,
+        true,
+        2,
+    ));
+    out.push_str(&json_f64(
+        "effective_gain_vs_materialized",
+        effective_gain_vs_materialized,
+        true,
+        2,
+    ));
     out.push_str(&json_f64(
         "ratio_shift_percent_range",
         ratio_shift_percent_range,
@@ -1283,6 +1567,7 @@ pub fn p63_campaign_report_to_json(report: &P63CampaignReport) -> String {
     ));
     machine_metadata_json(&mut out, &report.machine_metadata);
     campaign_summary_json(&mut out, &report.summary);
+    core_ratio_metrics_json(&mut out, &report.core_metrics);
     out.push_str(&json_string(
         "ratio_stability_status",
         report.ratio_stability_status.as_str(),
@@ -1374,6 +1659,8 @@ fn p63_summary_markdown(report: &P63CampaignReport) -> String {
          - Threshold profile: `{}` (`{}`)\n\
          - Median ratio_effective_per_byte: `{:.6}`\n\
          - Median total_persisted_bytes: `{:.0}`\n\
+         - Virtual effective units: `{}`\n\
+         - Effective gain vs materialized: `{:.6}`\n\
          - Cost model: `{}`\n\
          - Measurement kind: `{}`\n\n\
          ## Limits\n\n\
@@ -1392,6 +1679,8 @@ fn p63_summary_markdown(report: &P63CampaignReport) -> String {
         report.threshold_profile_resolved,
         report.summary.ratio_effective_per_byte.median,
         report.summary.total_persisted_bytes.median,
+        report.core_metrics.virtual_effective_units,
+        report.core_metrics.effective_gain_vs_materialized,
         report.cost_model,
         report.measurement_kind
     )
@@ -1679,6 +1968,26 @@ fn extract_json_number(json: &str, key: &str) -> Option<f64> {
     rest[..end].parse::<f64>().ok()
 }
 
+fn extract_object_block<'a>(json: &'a str, key: &str) -> Option<&'a str> {
+    let needle = format!("\"{}\": {{", key);
+    let start = json.find(&needle)?;
+    let object_start = start + needle.len() - 1;
+    let mut depth = 0usize;
+    for (offset, ch) in json[object_start..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(&json[object_start..=object_start + offset]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn git_dirty() -> Option<bool> {
     let output = Command::new("git")
         .args(["status", "--short"])
@@ -1864,6 +2173,145 @@ fn campaign_summary_json(out: &mut String, summary: &P63CampaignSummary) {
     out.push_str("  },\n");
 }
 
+fn core_ratio_metrics_json(out: &mut String, metrics: &P63CoreRatioMetrics) {
+    out.push_str("  \"core_ratio_metrics\": {\n");
+    out.push_str(&json_u128(
+        "virtual_declared_units",
+        metrics.virtual_declared_units,
+        true,
+        4,
+    ));
+    out.push_str(&json_u128(
+        "virtual_reachable_units",
+        metrics.virtual_reachable_units,
+        true,
+        4,
+    ));
+    out.push_str(&json_u128(
+        "virtual_readable_units",
+        metrics.virtual_readable_units,
+        true,
+        4,
+    ));
+    out.push_str(&json_u128(
+        "virtual_updatable_units",
+        metrics.virtual_updatable_units,
+        true,
+        4,
+    ));
+    out.push_str(&json_u128(
+        "virtual_safe_units",
+        metrics.virtual_safe_units,
+        true,
+        4,
+    ));
+    out.push_str(&json_u128(
+        "virtual_effective_units",
+        metrics.virtual_effective_units,
+        true,
+        4,
+    ));
+    out.push_str(&json_u64(
+        "total_persisted_bytes",
+        metrics.total_persisted_bytes,
+        true,
+        4,
+    ));
+    out.push_str(&json_u64(
+        "payload_file_bytes",
+        metrics.payload_file_bytes,
+        true,
+        4,
+    ));
+    out.push_str(&json_u64(
+        "index_file_bytes",
+        metrics.index_file_bytes,
+        true,
+        4,
+    ));
+    out.push_str(&json_u64(
+        "journal_file_bytes",
+        metrics.journal_file_bytes,
+        true,
+        4,
+    ));
+    out.push_str(&json_u64(
+        "manifest_file_bytes",
+        metrics.manifest_file_bytes,
+        true,
+        4,
+    ));
+    match metrics.checksum_or_audit_bytes {
+        Some(value) => out.push_str(&json_u64("checksum_or_audit_bytes", value, true, 4)),
+        None => out.push_str("    \"checksum_or_audit_bytes\": null,\n"),
+    }
+    match metrics.metadata_bytes {
+        Some(value) => out.push_str(&json_u64("metadata_bytes", value, true, 4)),
+        None => out.push_str("    \"metadata_bytes\": null,\n"),
+    }
+    out.push_str(&json_f64(
+        "ratio_declared_per_byte",
+        metrics.ratio_declared_per_byte,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "ratio_reachable_per_byte",
+        metrics.ratio_reachable_per_byte,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "ratio_readable_per_byte",
+        metrics.ratio_readable_per_byte,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "ratio_updatable_per_byte",
+        metrics.ratio_updatable_per_byte,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "ratio_safe_per_byte",
+        metrics.ratio_safe_per_byte,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "ratio_effective_per_byte",
+        metrics.ratio_effective_per_byte,
+        true,
+        4,
+    ));
+    out.push_str(&json_u128(
+        "assumed_materialized_value_bytes",
+        metrics.assumed_materialized_value_bytes,
+        true,
+        4,
+    ));
+    out.push_str(&json_u128(
+        "estimated_materialized_bytes",
+        metrics.estimated_materialized_bytes,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "gain_vs_materialized",
+        metrics.gain_vs_materialized,
+        true,
+        4,
+    ));
+    out.push_str(&json_f64(
+        "effective_gain_vs_materialized",
+        metrics.effective_gain_vs_materialized,
+        false,
+        4,
+    ));
+    out.push_str("  },\n");
+}
+
 fn robust_metric_json(
     out: &mut String,
     name: &str,
@@ -2044,6 +2492,54 @@ fn f64_array_json(
     ));
 }
 
+fn u128_array_json(
+    out: &mut String,
+    name: &str,
+    values: &[u128],
+    trailing_comma: bool,
+    indent: usize,
+) {
+    let spaces = " ".repeat(indent);
+    out.push_str(&format!("{}\"{}\": [\n", spaces, name));
+    for (idx, value) in values.iter().enumerate() {
+        out.push_str(&format!(
+            "{}  {}{}\n",
+            spaces,
+            value,
+            comma(idx, values.len())
+        ));
+    }
+    out.push_str(&format!(
+        "{}]{}\n",
+        spaces,
+        if trailing_comma { "," } else { "" }
+    ));
+}
+
+fn u64_array_json(
+    out: &mut String,
+    name: &str,
+    values: &[u64],
+    trailing_comma: bool,
+    indent: usize,
+) {
+    let spaces = " ".repeat(indent);
+    out.push_str(&format!("{}\"{}\": [\n", spaces, name));
+    for (idx, value) in values.iter().enumerate() {
+        out.push_str(&format!(
+            "{}  {}{}\n",
+            spaces,
+            value,
+            comma(idx, values.len())
+        ));
+    }
+    out.push_str(&format!(
+        "{}]{}\n",
+        spaces,
+        if trailing_comma { "," } else { "" }
+    ));
+}
+
 fn indent_json(text: &str, indent: usize) -> String {
     let spaces = " ".repeat(indent);
     text.lines()
@@ -2092,6 +2588,16 @@ fn json_u64(name: &str, value: u64, trailing_comma: bool, indent: usize) -> Stri
     )
 }
 
+fn json_u128(name: &str, value: u128, trailing_comma: bool, indent: usize) -> String {
+    format!(
+        "{}\"{}\": {}{}\n",
+        " ".repeat(indent),
+        name,
+        value,
+        if trailing_comma { "," } else { "" }
+    )
+}
+
 fn json_f64(name: &str, value: f64, trailing_comma: bool, indent: usize) -> String {
     format!(
         "{}\"{}\": {:.6}{}\n",
@@ -2100,6 +2606,45 @@ fn json_f64(name: &str, value: f64, trailing_comma: bool, indent: usize) -> Stri
         value,
         if trailing_comma { "," } else { "" }
     )
+}
+
+fn ratio_u128(numerator: u128, denominator: u64) -> f64 {
+    if denominator == 0 {
+        0.0
+    } else {
+        numerator as f64 / denominator as f64
+    }
+}
+
+fn median_u128(values: &[u128]) -> u128 {
+    if values.is_empty() {
+        return 0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    sorted[(sorted.len() - 1) / 2]
+}
+
+fn median_u64(values: &[u64]) -> u64 {
+    if values.is_empty() {
+        return 0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    sorted[(sorted.len() - 1) / 2]
+}
+
+fn median_f64(values: &[f64]) -> f64 {
+    let mut sorted: Vec<f64> = values
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .collect();
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    sorted.sort_by(|a, b| a.partial_cmp(b).expect("finite samples sort"));
+    sorted[(sorted.len() - 1) / 2]
 }
 
 fn comma(idx: usize, len: usize) -> &'static str {

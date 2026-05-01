@@ -28,6 +28,11 @@ Prompt Codex 5 adds `p63_campaign_set_v1`, collects three local standard
 campaigns with `runs = 30`, summarizes the comparable long-campaign set, and
 keeps the decision conservative.
 
+Prompt Codex 6 adds a core virtual/real ratio view to P63 campaign reports,
+registries and campaign set summaries. It also runs a local ambitious R&D
+campaign set with three campaigns of `runs = 50`, keeps generated artifacts out
+of Git, and keeps the scientific decision conservative.
+
 P63 is now local-first strict: real local commands and this versioned analysis
 report are the primary validation surface. GitHub Actions remains a minimal
 external sanity check, not the scientific validation gate.
@@ -66,6 +71,7 @@ Expected future additions:
 - P63 threshold profile: `p63`, conservative.
 - P63 campaign registry: `PARTIAL_IMPLEMENTATION_CAMPAIGN_REGISTRY`.
 - P63 campaign set: `PARTIAL_IMPLEMENTATION_CAMPAIGN_SET`.
+- P63 core ratio view: `PARTIAL_IMPLEMENTATION_CORE_RATIO_VIEW`.
 - Validation process: `LOCAL_FIRST_STRICT`.
 
 ## 5. Files changed
@@ -124,6 +130,17 @@ Prompt Codex 5 campaign set step:
 Runtime semantics, grammar, invalid examples, P61/P62 goldens and timing
 goldens are not changed in this campaign set step.
 
+Prompt Codex 6 core ratio view step:
+
+- `src/p63.rs`
+- `tests/p63_tests.rs`
+- `docs/validation/astra-p63-measured-ratio-calibration.md`
+- `docs/analysis/ASTRA-P63-measured-ratio-calibration-analysis.md`
+- `README.md`
+
+Runtime semantics, grammar, invalid examples, P61/P62 goldens and timing
+goldens are not changed in this core ratio view step.
+
 ## 6. Commands executed
 
 Executed locally for this P63 documentation/reporting step:
@@ -158,12 +175,21 @@ cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/standard_030_002
 cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/standard_030_003/campaign_report.json --registry artifacts/p63/registry.json --name standard_030_003 --format json
 cargo run -p atlas-cli -- ratio-campaign-set-summary artifacts/p63/registry.json --mode standard --threshold-profile p63 --format json
 cargo run -p atlas-cli -- ratio-campaign-compare artifacts/p63/standard_030_001/campaign_report.json artifacts/p63/standard_030_002/campaign_report.json --format json
+cargo test --test p63_tests
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode ambitious --format json --runs 50 --export-dir artifacts/p63/ambitious_050_001 --threshold-profile p63
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode ambitious --format json --runs 50 --export-dir artifacts/p63/ambitious_050_002 --threshold-profile p63
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas --mode ambitious --format json --runs 50 --export-dir artifacts/p63/ambitious_050_003 --threshold-profile p63
+cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/ambitious_050_001/campaign_report.json --registry artifacts/p63/registry_v6.json --name ambitious_050_001 --format json
+cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/ambitious_050_002/campaign_report.json --registry artifacts/p63/registry_v6.json --name ambitious_050_002 --format json
+cargo run -p atlas-cli -- ratio-campaign-register artifacts/p63/ambitious_050_003/campaign_report.json --registry artifacts/p63/registry_v6.json --name ambitious_050_003 --format json
+cargo run -p atlas-cli -- ratio-campaign-set-summary artifacts/p63/registry_v6.json --mode ambitious --threshold-profile p63 --format json --set-name ambitious_050_local_set
+cargo run -p atlas-cli -- ratio-campaign-compare artifacts/p63/ambitious_050_001/campaign_report.json artifacts/p63/ambitious_050_002/campaign_report.json --format json
 
 git status --short
 git diff --check
 ```
 
-Execution status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_5`.
+Execution status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_6`.
 
 ## 7. Validation results
 
@@ -295,6 +321,54 @@ Execution status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_5`.
   - `ratio_shift_percent = 0.000000`
   - `bytes_shift_percent = 0.000000`
   - `comparison_decision = COMPARE_P63_SAME_MODE_INFORMATIONAL`
+- P63-v6 core ratio metrics in campaign reports: `PASS`
+  - `core_ratio_metrics` added to P63 campaign JSON
+  - registry entries include virtual/effective units, persisted bytes and
+    materialization gains
+  - campaign set summaries expose median virtual/real ratio fields
+- P63-v6 `cargo test --test p63_tests`: `PASS`
+  - `18 passed`
+- P63-v6 ambitious campaign 050_001: `PASS`
+  - command: `ratio-real ... --mode ambitious --runs 50 --export-dir artifacts/p63/ambitious_050_001 --threshold-profile p63`
+  - approximate duration observed with `/usr/bin/time -p`: `real 1.25s`
+  - median `ratio_effective_per_byte = 3.162072`
+  - median `total_persisted_bytes = 777971`
+  - ratio/bytes stability: `STABLE`
+  - timing stability: `WARN`
+  - campaign stability: `WARN`
+  - decision: `RECALIBRATE_P63_THRESHOLDS`
+- P63-v6 ambitious campaign 050_002: `PASS`
+  - approximate duration observed: `real 1.32s`
+  - median `ratio_effective_per_byte = 3.162072`
+  - median `total_persisted_bytes = 777971`
+  - campaign stability: `WARN`
+  - decision: `RECALIBRATE_P63_THRESHOLDS`
+- P63-v6 ambitious campaign 050_003: `PASS`
+  - approximate duration observed: `real 1.39s`
+  - median `ratio_effective_per_byte = 3.162072`
+  - median `total_persisted_bytes = 777971`
+  - campaign stability: `WARN`
+  - decision: `RECALIBRATE_P63_THRESHOLDS`
+- P63-v6 ambitious campaign set: `PASS`
+  - `set_name = ambitious_050_local_set`
+  - `campaign_count = 3`
+  - `total_runs = 150`
+  - `virtual_declared_units = 34320000`
+  - `virtual_effective_units = 2460000`
+  - `total_persisted_bytes = 777971`
+  - `ratio_effective_per_byte = 3.162072`
+  - `gain_vs_materialized = 352.918039`
+  - `effective_gain_vs_materialized = 25.296573`
+  - `ratio_shift_percent_range = 0.000000`
+  - `bytes_shift_percent_range = 0.000000`
+  - `intra_mode_set_status = CAMPAIGN_SET_WARN`
+  - `set_decision = RECALIBRATE_P63_THRESHOLDS`
+- P63-v6 ambitious intra-mode comparison 050_001 vs 050_002: `PASS`
+  - `compatibility_status = SAME_MODE_COMPARABLE`
+  - `intra_mode_status = INTRA_MODE_STABLE`
+  - `ratio_shift_percent = 0.000000`
+  - `bytes_shift_percent = 0.000000`
+  - `comparison_decision = COMPARE_P63_SAME_MODE_INFORMATIONAL`
 - `git diff --check`: `PASS`
 - GitHub Actions: minimal external sanity only; not a P63 scientific gate.
 
@@ -372,6 +446,19 @@ Prompt Codex 5 adds a campaign set summary:
 - conservative `set_decision`;
 - `set_reasons`.
 
+Prompt Codex 6 adds the core virtual/real ratio view:
+
+- `virtual_declared_units`;
+- `virtual_reachable_units`;
+- `virtual_readable_units`;
+- `virtual_updatable_units`;
+- `virtual_safe_units`;
+- `virtual_effective_units`;
+- measured real persisted byte breakdown;
+- `ratio_declared_per_byte` through `ratio_effective_per_byte`;
+- `gain_vs_materialized` and `effective_gain_vs_materialized`;
+- campaign set medians for the same core fields.
+
 Expected future campaign fields:
 
 - campaign id;
@@ -416,6 +503,10 @@ Prompt Codex 5 collects three comparable long standard campaigns with
 `runs = 30`. Ratio and byte ranges are stable at `0.000000%`, while timing
 variability keeps each campaign at `WARN`; the campaign set therefore returns
 `CAMPAIGN_SET_WARN`.
+
+Prompt Codex 6 collects three ambitious local R&D campaigns with `runs = 50`.
+Ratio and byte ranges are again stable at `0.000000%`; timing variability keeps
+campaigns at `WARN`, so the campaign set remains `CAMPAIGN_SET_WARN`.
 
 ## 11. Threshold profile and decisions
 
@@ -497,10 +588,13 @@ Proposed gates:
 - `P63_G13_campaign_set_available`
 - `P63_G14_long_standard_campaigns_collected`
 - `P63_G15_local_first_report_updated`
+- `P63_G16_core_virtual_real_metrics_available`
+- `P63_G17_ambitious_local_campaign_set_collected`
+- `P63_G18_gitignore_protects_generated_artifacts`
 
-Gate status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_5_RECALIBRATE`.
+Gate status: `LOCAL_VALIDATION_PASS_FOR_PROMPT_6_RECALIBRATE`.
 
-Observed gate status through Prompt Codex 5:
+Observed gate status through Prompt Codex 6:
 
 - `P63_G0_p61_proxy_baseline_preserved`: `PASS`
 - `P63_G1_p62_measured_runs_available`: `PASS`
@@ -518,6 +612,9 @@ Observed gate status through Prompt Codex 5:
 - `P63_G13_campaign_set_available`: `PASS`
 - `P63_G14_long_standard_campaigns_collected`: `PASS`
 - `P63_G15_local_first_report_updated`: `PASS`
+- `P63_G16_core_virtual_real_metrics_available`: `PASS`
+- `P63_G17_ambitious_local_campaign_set_collected`: `PASS`
+- `P63_G18_gitignore_protects_generated_artifacts`: `PASS`
 
 Final scientific gate status remains `RECALIBRATE_P63_THRESHOLDS`.
 
@@ -567,6 +664,101 @@ Observed Prompt Codex 5 campaign set:
 - set status: `CAMPAIGN_SET_WARN`;
 - set decision: `RECALIBRATE_P63_THRESHOLDS`.
 
+## P63-v6 — Core virtual/real ratio view
+
+Prompt Codex 6 exposes the core ASTRA question directly in campaign reports and
+campaign set summaries: how much virtual addressable space remains effective
+after reachability, readability, updatability, safety and audit constraints,
+and how many real persisted bytes were paid for it.
+
+| campaign_set | mode | campaigns | total_runs | virtual_declared | virtual_effective | real_bytes | ratio_effective_per_byte | gain_vs_materialized | decision |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `ambitious_050_local_set` | `ambitious` | 3 | 150 | 34320000 | 2460000 | 777971 | 3.162072 | 352.918039 | `RECALIBRATE_P63_THRESHOLDS` |
+
+Virtual addressability scale for the ambitious R&D set:
+
+```text
+virtual_declared
+  -> virtual_reachable
+  -> virtual_readable
+  -> virtual_updatable
+  -> virtual_safe
+  -> virtual_effective
+
+34320000
+  -> 3534000
+  -> 3054000
+  -> 2568000
+  -> 2460000
+  -> 2460000
+```
+
+Virtual/real compression view:
+
+```text
+[declared  : ##########] 34320000 units
+[effective : #---------] 2460000 units
+[real cost : ##--------] 777971 bytes
+
+ratio_declared_per_byte  = 44.114755
+ratio_reachable_per_byte = 4.542586
+ratio_readable_per_byte  = 3.925596
+ratio_updatable_per_byte = 3.300894
+ratio_safe_per_byte      = 3.162072
+ratio_effective_per_byte = 3.162072
+
+assumed_materialized_value_bytes = 8
+estimated_materialized_bytes     = 274560000
+gain_vs_materialized             = 352.918039
+effective_gain_vs_materialized   = 25.296573
+```
+
+Interpretation:
+
+- `ratio_effective_per_byte` is the central measured ratio for P63-v6.
+- `ratio_declared_per_byte` is displayed for context but does not drive the
+  decision.
+- `gain_vs_materialized` uses the declared space and an explicit 8-byte value
+  baseline; `effective_gain_vs_materialized` uses only effective virtual space.
+- These values describe deterministic internal ASTRA workloads on one local
+  machine. They do not imply external scientific validation, industrial
+  performance, or multi-machine stability.
+- The decision remains conservative because `allow_validate = false`, timings
+  are machine-dependent and no external datasets are included.
+
+## P63-v6 — Process validation
+
+- Codex executed the local Rust validation commands in the isolated ASTRA
+  environment.
+- Long campaigns are local-only and are not part of GitHub Actions.
+- The versioned analysis report is the immediate scientific-facing artifact.
+- Generated campaign artifacts remain under `artifacts/p63/`, which is ignored
+  by Git.
+- The `git add .` workflow is compatible with the current `.gitignore` rules:
+  `artifacts/p63/`, `target/`, `.cargo-target/`, `*.log`, `.DS_Store`, `tmp/`,
+  `*.tmp` and `*.out` are protected.
+- Important results are summarized here instead of storing large stdout dumps.
+
+## Future multi-machine protocol
+
+Future measured-ratio validation should repeat the same local campaign protocol
+on at least two different environments:
+
+1. Activate the isolated ASTRA Rust environment.
+2. Run the same `ratio-real --mode standard` or `ratio-real --mode ambitious`
+   campaign with a fixed `--runs` value and `--threshold-profile p63`.
+3. Register the generated `campaign_report.json` locally.
+4. Do not commit `artifacts/p63/` outputs.
+5. Compare `virtual_effective_units`, `total_persisted_bytes`,
+   `ratio_effective_per_byte`, `gain_vs_materialized`, timing stability and
+   machine metadata summaries.
+6. Enrich machine metadata manually if needed: CPU model, memory class, OS,
+   Rust/Cargo versions and build profile.
+
+Scientific validation requires multi-machine evidence because timings and some
+filesystem behaviors are machine-dependent. P63-v6 prepares this protocol but
+does not execute it.
+
 ## 14. Scientific interpretation
 
 P63 should make the measured ratio analysis more scientific, but it must remain
@@ -580,6 +772,10 @@ The Prompt Codex 5 long standard campaign set strengthens local evidence for
 the deterministic internal workload path. It does not establish external
 scientific validity because it is still one local machine, one internal fixture
 family and uncalibrated thresholds.
+
+The Prompt Codex 6 ambitious R&D set increases the local workload scale and
+surfaces the core virtual/real ratio directly. It still remains a single-machine
+deterministic campaign and therefore keeps `RECALIBRATE_P63_THRESHOLDS`.
 
 ## 15. Limitations
 
@@ -602,13 +798,22 @@ Recommended P64 direction after P63:
   JSON/JSONL/CSV/Markdown surface;
 - prepare a Results-oriented synthesis only after repo reports are complete.
 
-Recommended Prompt Codex 6 direction:
+Prompt Codex 6 outcome:
 
-- add an explicit local campaign set comparison across independently collected
-  standard sets;
-- improve machine metadata completeness;
-- prepare multi-machine evidence capture without committing heavy artifacts;
-- keep `allow_validate = false` until thresholds and datasets are justified.
+- core virtual/real metrics are now exposed in P63 campaign reports, registry
+  entries and campaign set summaries;
+- three local ambitious campaigns were collected and summarized;
+- generated artifacts remain ignored by Git;
+- `allow_validate = false` remains unchanged.
+
+Recommended Prompt Codex 7 direction:
+
+- prepare a portable multi-machine campaign checklist;
+- add an optional machine metadata note/template outside generated artifacts;
+- compare standard and ambitious campaign sets without treating different modes
+  as regressions;
+- keep the final decision conservative until external datasets and calibrated
+  thresholds exist.
 
 ## 17. Reproducibility notes
 
@@ -636,4 +841,6 @@ essential.
   `LOCAL_VALIDATION_PASS_FOR_PROMPT_4`.
 - Prompt Codex 5 long standard campaign set implementation:
   `LOCAL_VALIDATION_PASS_FOR_PROMPT_5`.
+- Prompt Codex 6 core virtual/real ratio view and ambitious R&D campaign set:
+  `LOCAL_VALIDATION_PASS_FOR_PROMPT_6`.
 - Process update: `LOCAL_FIRST_STRICT`; CI remains minimal external sanity only.

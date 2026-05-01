@@ -317,6 +317,89 @@ Campaign set statuses are:
 P63 keeps `allow_validate = false`; even a stable local campaign set remains a
 threshold calibration artifact, not scientific validation.
 
+## Core Virtual/Real Ratio View
+
+Prompt Codex 6 exposes the core ratio metrics directly in P63 campaign reports,
+registries and campaign set summaries.
+
+Virtual space metrics:
+
+- `virtual_declared_units`
+- `virtual_reachable_units`
+- `virtual_readable_units`
+- `virtual_updatable_units`
+- `virtual_safe_units`
+- `virtual_effective_units`
+
+Real cost metrics:
+
+- `total_persisted_bytes`
+- `payload_file_bytes`
+- `index_file_bytes`
+- `journal_file_bytes`
+- `manifest_file_bytes`
+- `checksum_or_audit_bytes`
+- `metadata_bytes`
+
+If a measured value is not available, reports must expose `null` or a clear
+absence value instead of inventing a number. In the current measured path,
+`metadata_bytes` is `null` because it is not separately measured yet.
+
+Core ratios:
+
+- `ratio_declared_per_byte`
+- `ratio_reachable_per_byte`
+- `ratio_readable_per_byte`
+- `ratio_updatable_per_byte`
+- `ratio_safe_per_byte`
+- `ratio_effective_per_byte`
+
+`ratio_effective_per_byte` remains the central metric. Declared ratio is
+reported for context only and must not drive validation.
+
+Materialization baseline:
+
+- `assumed_materialized_value_bytes = 8`
+- `estimated_materialized_bytes = virtual_declared_units * 8`
+- `gain_vs_materialized = estimated_materialized_bytes / total_persisted_bytes`
+- `effective_gain_vs_materialized = virtual_effective_units * 8 / total_persisted_bytes`
+
+The materialization baseline is a transparent local analysis baseline, not a
+scientific claim about external systems.
+
+## Local R&D Campaigns
+
+Prompt Codex 6 allows a local ambitious R&D campaign set such as:
+
+```bash
+cargo run -p atlas-cli -- ratio-real examples/p53_strict.atlas \
+  --mode ambitious \
+  --format json \
+  --runs 50 \
+  --export-dir artifacts/p63/ambitious_050_001 \
+  --threshold-profile p63
+```
+
+Campaigns can then be registered and summarized:
+
+```bash
+cargo run -p atlas-cli -- ratio-campaign-register \
+  artifacts/p63/ambitious_050_001/campaign_report.json \
+  --registry artifacts/p63/registry_v6.json \
+  --name ambitious_050_001 \
+  --format json
+
+cargo run -p atlas-cli -- ratio-campaign-set-summary \
+  artifacts/p63/registry_v6.json \
+  --mode ambitious \
+  --threshold-profile p63 \
+  --format json \
+  --set-name ambitious_050_local_set
+```
+
+These campaigns are local-only. They must not be added to CI and their generated
+artifacts remain ignored under `artifacts/p63/`.
+
 ## Local-First Process
 
 P63 analysis is local-first. The durable source for each step is the local
