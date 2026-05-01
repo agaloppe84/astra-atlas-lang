@@ -99,6 +99,30 @@ P63-v6 expose aussi les metriques coeur `virtual_*_units`,
 `ratio_effective_per_byte` et `gain_vs_materialized` dans les rapports de
 campagne et les syntheses de campaign set.
 
+## Validation P64 address-local
+
+P64 ajoute `ratio-realish` pour comparer des fixtures realish legeres avec les
+politiques `full-materialization`, `global-indexed` et `address-local`. Le but
+est de mesurer si le runtime paie seulement le voisinage local autour d'une
+adresse demandee, sans materialiser tout l'espace virtuel.
+
+```bash
+cargo run -p atlas-cli -- ratio-realish examples/p53_strict.atlas \
+  --workload all \
+  --policy all \
+  --mode standard \
+  --runs 30 \
+  --queries 1000 \
+  --neighborhood-radius 3 \
+  --export-dir artifacts/p64/realish_standard_policy_compare \
+  --format json
+```
+
+Les exports P64 vivent sous `artifacts/p64/` et restent ignores par Git. Voir
+[docs/validation/astra-p64-address-local-realish-workloads.md](docs/validation/astra-p64-address-local-realish-workloads.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P64-address-local-realish-ratio-analysis.md](docs/analysis/ASTRA-P64-address-local-realish-ratio-analysis.md).
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

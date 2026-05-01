@@ -21,3 +21,6 @@ tmp/
 
 # P63 local measured campaign exports
 artifacts/p63/
+
+# P64 local realish campaign exports
+artifacts/p64/

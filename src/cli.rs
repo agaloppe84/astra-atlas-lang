@@ -5,7 +5,9 @@ use crate::{
     p63_campaign_compare_json_files, p63_campaign_register_json_file,
     p63_campaign_report_file_with_runs, p63_campaign_report_to_json,
     p63_campaign_set_summary_json_file, p63_campaign_summary_json_file, run_workload_file,
-    validate_file, write_p63_campaign_exports, DiagnosticCode, P63ThresholdProfile, WorkloadMode,
+    validate_file, write_p63_campaign_exports, write_p64_campaign_exports, DiagnosticCode,
+    P63ThresholdProfile, P64GenerationPolicy, P64RatioRealishOptions, P64WorkloadKind,
+    WorkloadMode,
 };
 use std::env;
 
@@ -52,6 +54,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "ratio-campaign-register" => ratio_campaign_register_command(args),
         "ratio-campaign-summary" => ratio_campaign_summary_command(args),
         "ratio-campaign-set-summary" => ratio_campaign_set_summary_command(args),
+        "ratio-realish" => ratio_realish_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
@@ -296,6 +299,24 @@ fn ratio_campaign_set_summary_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn ratio_realish_command(args: &[String]) -> Result<(), String> {
+    let path = args
+        .get(1)
+        .ok_or_else(|| usage("ratio-realish requires a .atlas path"))?;
+    let options = parse_p64_options(&args[2..])?;
+    let report = crate::p64_ratio_realish_report_file(path, options.options)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    if let Some(export_dir) = &options.export_dir {
+        write_p64_campaign_exports(&report, export_dir)
+            .map_err(|diagnostic| diagnostic.to_string())?;
+    }
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p64_report_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p64_summary_markdown(&report)),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -322,6 +343,13 @@ struct CampaignSetOptions {
     set_name: String,
     mode: WorkloadMode,
     threshold_profile: P63ThresholdProfile,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct P64CliOptions {
+    options: P64RatioRealishOptions,
+    export_dir: Option<String>,
+    format: OutputFormat,
 }
 
 fn parse_required_mode(args: &[String], command: &str) -> Result<WorkloadMode, String> {
@@ -591,6 +619,180 @@ fn parse_campaign_set_options(args: &[String]) -> Result<CampaignSetOptions, Str
     })
 }
 
+fn parse_p64_options(args: &[String]) -> Result<P64CliOptions, String> {
+    let mut workload = None;
+    let mut workload_all = false;
+    let mut policy = None;
+    let mut policy_all = false;
+    let mut mode = None;
+    let mut runs = None;
+    let mut queries = None;
+    let mut neighborhood_radius = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--workload" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-realish requires a value after --workload"))?;
+            let parsed = parse_p64_workload_value(value)?;
+            workload_all = parsed.is_none();
+            workload = parsed;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--workload=") {
+            let parsed = parse_p64_workload_value(value)?;
+            workload_all = parsed.is_none();
+            workload = parsed;
+            idx += 1;
+        } else if arg == "--policy" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-realish requires a value after --policy"))?;
+            let parsed = parse_p64_policy_value(value)?;
+            policy_all = parsed.is_none();
+            policy = parsed;
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--policy=") {
+            let parsed = parse_p64_policy_value(value)?;
+            policy_all = parsed.is_none();
+            policy = parsed;
+            idx += 1;
+        } else if arg == "--mode" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-realish requires a value after --mode"))?;
+            mode = Some(parse_mode_value(value, "ratio-realish")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--mode=") {
+            mode = Some(parse_mode_value(value, "ratio-realish")?);
+            idx += 1;
+        } else if arg == "--runs" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-realish requires a value after --runs"))?;
+            runs = Some(parse_positive_usize(value, "ratio-realish", "--runs")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--runs=") {
+            runs = Some(parse_positive_usize(value, "ratio-realish", "--runs")?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-realish requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(value, "ratio-realish", "--queries")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(value, "ratio-realish", "--queries")?);
+            idx += 1;
+        } else if arg == "--neighborhood-radius" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("ratio-realish requires a value after --neighborhood-radius")
+            })?;
+            neighborhood_radius = Some(parse_positive_usize(
+                value,
+                "ratio-realish",
+                "--neighborhood-radius",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--neighborhood-radius=") {
+            neighborhood_radius = Some(parse_positive_usize(
+                value,
+                "ratio-realish",
+                "--neighborhood-radius",
+            )?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-realish requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("ratio-realish requires a value after --format"))?;
+            format = Some(parse_format_value(value, "ratio-realish")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "ratio-realish")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "ratio-realish received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    if !workload_all && workload.is_none() {
+        return Err(usage("ratio-realish requires --workload <name>|all"));
+    }
+    if !policy_all && policy.is_none() {
+        return Err(usage("ratio-realish requires --policy <name>|all"));
+    }
+
+    Ok(P64CliOptions {
+        options: P64RatioRealishOptions {
+            workload,
+            policy,
+            mode: mode
+                .ok_or_else(|| usage("ratio-realish requires --mode smoke|standard|ambitious"))?,
+            runs: runs.ok_or_else(|| usage("ratio-realish requires --runs N"))?,
+            queries: queries.ok_or_else(|| usage("ratio-realish requires --queries N"))?,
+            neighborhood_radius: neighborhood_radius
+                .ok_or_else(|| usage("ratio-realish requires --neighborhood-radius N"))?,
+        },
+        export_dir,
+        format: format.ok_or_else(|| usage("ratio-realish requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p64_workload_value(value: &str) -> Result<Option<P64WorkloadKind>, String> {
+    if value == "all" {
+        return Ok(None);
+    }
+    P64WorkloadKind::from_str(value).map(Some).ok_or_else(|| {
+        usage(format!(
+            "ratio-realish received unsupported workload '{}'; expected realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all",
+            value
+        ))
+    })
+}
+
+fn parse_p64_policy_value(value: &str) -> Result<Option<P64GenerationPolicy>, String> {
+    if value == "all" {
+        return Ok(None);
+    }
+    P64GenerationPolicy::from_str(value).map(Some).ok_or_else(|| {
+        usage(format!(
+            "ratio-realish received unsupported policy '{}'; expected full-materialization|global-indexed|address-local|all",
+            value
+        ))
+    })
+}
+
+fn parse_positive_usize(value: &str, command: &str, option: &str) -> Result<usize, String> {
+    let parsed = value.parse::<usize>().map_err(|_| {
+        usage(format!(
+            "{} received invalid {} '{}'",
+            command, option, value
+        ))
+    })?;
+    if parsed == 0 {
+        return Err(usage(format!(
+            "{} requires {} greater than zero",
+            command, option
+        )));
+    }
+    Ok(parsed)
+}
+
 fn usage(detail: impl AsRef<str>) -> String {
     let commands = [
         "usage:",
@@ -607,6 +809,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli ratio-campaign-register <campaign.json> --registry <registry.json> --name <campaign-name> --format json",
         "  atlas-cli ratio-campaign-summary <registry.json> --format json",
         "  atlas-cli ratio-campaign-set-summary <registry.json> --mode smoke|standard|ambitious --threshold-profile p63 --format json [--set-name <name>]",
+        "  atlas-cli ratio-realish <file.atlas> --workload realish_log_events|realish_sparse_csv|realish_json_records|realish_hybrid_field_fixture|all --policy full-materialization|global-indexed|address-local|all --mode smoke|standard|ambitious --runs N --queries N --neighborhood-radius N [--export-dir <path>] --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }
