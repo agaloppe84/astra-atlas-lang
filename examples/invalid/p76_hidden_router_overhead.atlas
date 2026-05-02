@@ -1,0 +1,5 @@
+atlas version=0.1;
+p76_process_probe mode=routing_oracle;
+routing_oracle id=oracle_v1 compare=oracle,mixed,hierarchical regret_metric=ratio_living_and_update_cost wrong_route_budget=controlled hidden_router_overhead=true;
+virtual_space_model id=living_10m_v1 target_source_bytes=10485760 virtual_metric=effective_bytes_equivalent materialization_avoidance=measured local_on_address=true virtual_space_metrics_required=true virtual_bytes_claim=equivalent;
+astra_process_gates living_memory_only=true ratio_living_primary=true procedural_virtual_space_local=true virtual_space_metrics_required=true guard_no_false_gain=true hidden_router_overhead=false ratio_living_reported=true;

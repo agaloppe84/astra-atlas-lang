@@ -1,0 +1,179 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P76 Results -- Routing Oracle and Virtual Space},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.60em}
+\renewcommand{\arraystretch}{1.10}
+\sloppy
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\SmallCode}[1]{{\small\texttt{\detokenize{#1}}}}
+\newcommand{\TinyCode}[1]{{\scriptsize\texttt{\detokenize{#1}}}}
+\newcommand{\Decision}[1]{\textbf{\TinyCode{#1}}}
+
+\title{\textbf{ASTRA-P76 Results}\\Routing Oracle, Virtual Space Metrics and Spec Freeze}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+P76 ajoute un oracle de routage pour le routeur mixed-topology, calcule des
+metriques explicites d'espace virtuel local et fige une specification de
+travail ASTRA/Atlas pour P77. Le routeur reste proche de l'oracle en
+\Code{ratio_living}, mais les mauvais routages ne sont pas nuls. La decision
+reste donc \Decision{FREEZE_P76_ASTRA_CORE_SPEC_AND_RECALIBRATE_ROUTER}.
+\end{abstract}
+
+\section{Objectif}
+
+P76 teste si le routeur mixed-topology choisit presque aussi bien qu'un oracle
+par fibre sur un spectre living-memory. Le protocole conserve les actions
+encode, open, read/query, update, delete, audit, compact, close et reopen.
+
+\section{Principes de process}
+
+\begin{itemize}
+  \item Les decisions R\&D viennent des campagnes living-memory, pas des seuls
+  tests unitaires.
+  \item La metrique centrale reste \Code{ratio_living}: memoire virtuelle
+  effective equivalente divisee par memoire reelle payee.
+  \item L'espace virtuel se construit localement quand une adresse est atteinte;
+  il n'est pas materialise globalement.
+  \item Les champs virtuels en bytes sont des equivalents de materialisation,
+  pas des bytes stockes.
+\end{itemize}
+
+\section{Syntaxe .atlas P76}
+
+La syntaxe reste declarative et specialisee:
+
+\begin{verbatim}
+routing_oracle id=oracle_v1
+  compare=oracle,mixed,hierarchical,trie,graph,hypergraph,linear
+  regret_metric=ratio_living_and_update_cost
+  wrong_route_budget=controlled hidden_router_overhead=false;
+virtual_space_model id=living_10m_v1 target_source_bytes=10485760
+  virtual_metric=effective_bytes_equivalent
+  materialization_avoidance=measured local_on_address=true
+  virtual_space_metrics_required=true virtual_bytes_claim=equivalent;
+astra_process_gates living_memory_only=true ratio_living_primary=true
+  procedural_virtual_space_local=true virtual_space_metrics_required=true
+  guard_no_false_gain=true hidden_router_overhead=false
+  ratio_living_reported=true;
+\end{verbatim}
+
+\section{Validation locale}
+
+\begin{itemize}
+  \item \Code{cargo fmt --all -- --check}: PASS.
+  \item \Code{cargo build --workspace}: PASS.
+  \item \Code{cargo test --workspace}: PASS.
+  \item \Code{cargo test --test p76_tests}: PASS.
+  \item \Code{cargo test --test p75_tests}: PASS.
+  \item \Code{bash scripts/validate_p58_local.sh}: PASS.
+  \item invalides P76: 8/8 refuses.
+\end{itemize}
+
+\section{Campagne standard}
+
+\begin{longtable}{@{}p{0.52\linewidth}p{0.34\linewidth}@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\Code{target_source_bytes} & 10,485,760 \\
+\Code{actual_source_bytes} & 10,485,760 \\
+\Code{virtual_cell_count} & 10,000 \\
+\Code{virtual_fiber_count} & 40,000 \\
+\Code{virtual_effective_bytes_equivalent} & 63,532,744 \\
+\Code{cold_persisted_bytes} & 1,019,318 \\
+\Code{runtime_peak_bytes} & 512,520 \\
+\Code{ratio_living mixed} & 4.955068 \\
+\Code{ratio_living oracle} & 5.076273 \\
+\Code{router/oracle ratio} & 0.976123 \\
+\Code{wrong_route_count} & 570 \\
+\Code{wrong_route_cost} & 2,034 \\
+\Code{routing_accuracy} & 0.931159 \\
+\Code{address_lookup_p95_steps} & 10.250 \\
+\Code{crud_success_rate} & 1.000000 \\
+\Code{guard_decision} & \TinyCode{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED} \\
+\Code{drift_status} & \Code{NO_DRIFT} \\
+\bottomrule
+\end{longtable}
+
+\section{Campagne ambitious}
+
+\begin{longtable}{@{}p{0.52\linewidth}p{0.34\linewidth}@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\Code{target_source_bytes} & 10,485,760 \\
+\Code{actual_source_bytes} & 10,485,760 \\
+\Code{ratio_living mixed} & 4.955068 \\
+\Code{ratio_living oracle} & 5.076273 \\
+\Code{router/oracle ratio} & 0.976123 \\
+\Code{wrong_route_count} & 570 \\
+\Code{wrong_route_cost} & 2,034 \\
+\Code{routing_accuracy} & 0.931159 \\
+\Code{reopen_equivalence} & true \\
+\Code{drift_status} & \Code{NO_DRIFT} \\
+\bottomrule
+\end{longtable}
+
+\section{Oracle et regret}
+
+Le routeur atteint le seuil \Code{router/oracle >= 0.95}. Le regret reste
+controle, mais non nul. P76 ne promeut donc pas encore le routeur; il fige la
+specification de base et recommande une calibration P77 des seuils de routage.
+
+\section{Spec freeze}
+
+Trois documents sont versionnes:
+
+\begin{itemize}
+  \item \Code{docs/specs/ASTRA_CORE_SPEC_P76.md};
+  \item \Code{docs/specs/ATLAS_LANGUAGE_SPEC_P76.md};
+  \item \Code{docs/specs/ASTRA_PATTERNS_CATALOG_P76.md}.
+\end{itemize}
+
+\section{Decision}
+
+\Decision{FREEZE_P76_ASTRA_CORE_SPEC_AND_RECALIBRATE_ROUTER}
+
+\section{Limites}
+
+L'oracle P76 est deterministe et protocol-local. Il mesure une qualite de
+routage utile pour P77, mais ne prouve pas une optimalite globale. Les timings
+restent dependants de la machine et ne sont pas goldenises.
+
+\section{Chemin P77}
+
+P77 doit reduire le cout des mauvais routages avec des seuils deterministes
+calibres contre l'oracle, tout en conservant les campagnes living-memory 10 MiB,
+le guard, le reopen et le cout filesystem mesure.
+
+\end{document}

@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 68] {
+fn invalid_cases() -> [InvalidCase; 76] {
     [
         InvalidCase {
             name: "bad_version",
@@ -556,6 +556,70 @@ fn invalid_cases() -> [InvalidCase; 68] {
             family: None,
             field: None,
             message: "unknown block 'p75_router_probe'",
+        },
+        InvalidCase {
+            name: "p76_missing_virtual_space_metrics",
+            text: include_str!("../examples/invalid/p76_missing_virtual_space_metrics.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p76_process_probe'",
+        },
+        InvalidCase {
+            name: "p76_non_living_routing_decision",
+            text: include_str!("../examples/invalid/p76_non_living_routing_decision.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p76_process_probe'",
+        },
+        InvalidCase {
+            name: "p76_missing_guard_gate",
+            text: include_str!("../examples/invalid/p76_missing_guard_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p76_process_probe'",
+        },
+        InvalidCase {
+            name: "p76_hidden_router_overhead",
+            text: include_str!("../examples/invalid/p76_hidden_router_overhead.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p76_process_probe'",
+        },
+        InvalidCase {
+            name: "p76_unbounded_oracle_compare",
+            text: include_str!("../examples/invalid/p76_unbounded_oracle_compare.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p76_process_probe'",
+        },
+        InvalidCase {
+            name: "p76_bad_virtual_bytes_claim",
+            text: include_str!("../examples/invalid/p76_bad_virtual_bytes_claim.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p76_process_probe'",
+        },
+        InvalidCase {
+            name: "p76_missing_local_on_address",
+            text: include_str!("../examples/invalid/p76_missing_local_on_address.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p76_process_probe'",
+        },
+        InvalidCase {
+            name: "p76_ratio_not_reported",
+            text: include_str!("../examples/invalid/p76_ratio_not_reported.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p76_process_probe'",
         },
     ]
 }

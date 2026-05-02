@@ -59,6 +59,17 @@ incompressible, cout filesystem mesure, `ratio_living`, `runtime_peak_bytes`,
 restent autorises, mais seulement comme parser/typechecker, compatibilite et
 non-regression.
 
+## Ratio maximum et espace virtuel local
+
+A partir de P76, les rapports doivent garder ensemble `virtual_declared`,
+`virtual_reachable`, `virtual_readable`, `virtual_updatable`, `virtual_safe`,
+`virtual_effective`, `cold_persisted_bytes`, `runtime_peak_bytes` et
+`ratio_living`. Les champs `virtual_declared_bytes_equivalent` et
+`virtual_effective_bytes_equivalent` designent des equivalents de
+materialisation, pas des bytes stockes. Toute topologie ou tout routeur doit
+preserver la construction locale de l'espace virtuel quand une adresse est
+atteinte.
+
 ## LaTeX quality
 
 A partir de P75, Codex doit anticiper les warnings LaTeX avant de figer un PDF

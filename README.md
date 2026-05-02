@@ -467,6 +467,39 @@ Resultat local P75: `ratio_living_router=4.759326` standard,
 hierarchical `42290`, guard refuse et drift `NO_DRIFT`. Decision:
 `RECALIBRATE_P75_ROUTER_POLICY`.
 
+## Validation P76 routing oracle and virtual space
+
+P76 ajoute `routing-oracle-bench` et `virtual-space-estimate` pour comparer le
+routeur mixed-topology a un oracle par fibre, calculer explicitement la taille
+de l'espace virtuel equivalent et figer une spec ASTRA/Atlas de travail pour
+P77.
+
+```bash
+cargo run -p atlas-cli -- routing-oracle-bench \
+  --corpus all \
+  --target-source-bytes 10485760 \
+  --cycles 10 \
+  --queries 10000 \
+  --updates 1000 \
+  --deletes 100 \
+  --locality all \
+  --update-pressure all \
+  --compare oracle,mixed,hierarchical,linear,cubical,trie,graph,hypergraph \
+  --export-dir artifacts/p76/routing_oracle_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p76/` et sont ignores par Git. Voir
+[docs/validation/astra-p76-routing-oracle-virtual-space.md](docs/validation/astra-p76-routing-oracle-virtual-space.md),
+l'audit de tests
+[docs/analysis/ASTRA-P76-test-stack-audit.md](docs/analysis/ASTRA-P76-test-stack-audit.md),
+le rapport d'analyse
+[docs/analysis/ASTRA-P76-routing-oracle-virtual-space-spec-analysis.md](docs/analysis/ASTRA-P76-routing-oracle-virtual-space-spec-analysis.md)
+et les specs sous [docs/specs/](docs/specs/).
+
+Decision P76 attendue: spec core gelee pour P77, routeur a recalibrer contre
+l'oracle; pas de promotion tant que le cout des mauvais routages reste non nul.
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

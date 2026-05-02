@@ -14,7 +14,8 @@ use crate::{
     P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, P71FiberStoreOptions,
     P72CompactionPolicy, P72LivingStoreOptions, P73CompareP72, P73CubicalStoreOptions,
     P74CompactionPolicy, P74LocalityProfile, P74TopologyLivingOptions, P74UpdatePressure,
-    RealDataCorpusKind, RouterLivingOptions, RouterPolicy, TopologyKind, WorkloadMode,
+    P76CompareTarget, P76VirtualSpaceEstimateOptions, RealDataCorpusKind, RouterLivingOptions,
+    RouterPolicy, RoutingOracleOptions, TopologyKind, WorkloadMode,
 };
 use std::env;
 
@@ -75,12 +76,30 @@ fn run(args: &[String]) -> Result<(), String> {
         "cubical-store-bench" => cubical_store_bench_command(args),
         "topology-living-bench" => topology_living_bench_command(args),
         "mixed-topology-bench" => mixed_topology_bench_command(args),
+        "routing-oracle-bench" => routing_oracle_bench_command(args),
+        "virtual-space-estimate" => virtual_space_estimate_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
 }
 
 fn check_path(path: &str) -> Result<(), String> {
+    if crate::p76_process_file_looks_like(path) {
+        return match crate::p76_process_contract_report_file(path) {
+            Ok(report) => {
+                println!(
+                    "OK: p76_oracle={} compare={} living={} virtual_metrics={} guard={}",
+                    report.oracle_id,
+                    report.compare_count,
+                    report.living_memory_only,
+                    report.virtual_space_metrics_required,
+                    report.guard_no_false_gain
+                );
+                Ok(())
+            }
+            Err(diagnostic) => Err(diagnostic.to_string()),
+        };
+    }
     if crate::p75_router_file_looks_like(path) {
         return match crate::p75_router_contract_report_file(path) {
             Ok(report) => {
@@ -602,6 +621,33 @@ fn mixed_topology_bench_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn routing_oracle_bench_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p76_routing_oracle_options(&args[1..])?;
+    let report = crate::p76_routing_oracle_bench(options.options, &options.export_dir)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p76_routing_oracle_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p76_routing_oracle_markdown(&report)),
+    }
+    Ok(())
+}
+
+fn virtual_space_estimate_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p76_virtual_space_estimate_options(&args[1..])?;
+    let metrics = crate::p76_virtual_space_estimate(options.options);
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p76_virtual_space_metrics_json(&metrics)),
+        OutputFormat::Markdown => println!(
+            "- virtual_cell_count: `{}`\n- virtual_fiber_count: `{}`\n- virtual_effective_bytes_equivalent: `{}`\n- bytes_are_equivalent_not_stored: `{}`",
+            metrics.virtual_cell_count,
+            metrics.virtual_fiber_count,
+            metrics.virtual_effective_bytes_equivalent,
+            metrics.bytes_are_equivalent_not_stored
+        ),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -718,6 +764,19 @@ struct P74TopologyLivingCliOptions {
 struct P75RouterLivingCliOptions {
     options: RouterLivingOptions,
     export_dir: String,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P76RoutingOracleCliOptions {
+    options: RoutingOracleOptions,
+    export_dir: String,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P76VirtualSpaceEstimateCliOptions {
+    options: P76VirtualSpaceEstimateOptions,
     format: OutputFormat,
 }
 
@@ -3216,6 +3275,370 @@ fn parse_p75_router_policy(value: &str) -> Result<RouterPolicy, String> {
     })
 }
 
+fn parse_p76_routing_oracle_options(args: &[String]) -> Result<P76RoutingOracleCliOptions, String> {
+    let mut corpora = None;
+    let mut target_source_bytes = None;
+    let mut cycles = None;
+    let mut queries = None;
+    let mut updates = None;
+    let mut deletes = None;
+    let mut locality_profiles = None;
+    let mut update_pressures = None;
+    let mut compare = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--corpus" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-bench requires a value after --corpus"))?;
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corpus=") {
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 1;
+        } else if arg == "--target-source-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("routing-oracle-bench requires a value after --target-source-bytes")
+            })?;
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "routing-oracle-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--target-source-bytes=") {
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "routing-oracle-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--cycles" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-bench requires a value after --cycles"))?;
+            cycles = Some(parse_positive_usize(
+                value,
+                "routing-oracle-bench",
+                "--cycles",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cycles=") {
+            cycles = Some(parse_positive_usize(
+                value,
+                "routing-oracle-bench",
+                "--cycles",
+            )?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-bench requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(
+                value,
+                "routing-oracle-bench",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "routing-oracle-bench",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--updates" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-bench requires a value after --updates"))?;
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "routing-oracle-bench",
+                "--updates",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--updates=") {
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "routing-oracle-bench",
+                "--updates",
+            )?);
+            idx += 1;
+        } else if arg == "--deletes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-bench requires a value after --deletes"))?;
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "routing-oracle-bench",
+                "--deletes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--deletes=") {
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "routing-oracle-bench",
+                "--deletes",
+            )?);
+            idx += 1;
+        } else if arg == "--locality" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-bench requires a value after --locality"))?;
+            locality_profiles = Some(parse_p76_localities(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--locality=") {
+            locality_profiles = Some(parse_p76_localities(value)?);
+            idx += 1;
+        } else if arg == "--update-pressure" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("routing-oracle-bench requires a value after --update-pressure")
+            })?;
+            update_pressures = Some(parse_p76_update_pressures(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--update-pressure=") {
+            update_pressures = Some(parse_p76_update_pressures(value)?);
+            idx += 1;
+        } else if arg == "--compare" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-bench requires a value after --compare"))?;
+            compare = Some(parse_p76_compare_targets(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--compare=") {
+            compare = Some(parse_p76_compare_targets(value)?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-bench requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-bench requires a value after --format"))?;
+            format = Some(parse_format_value(value, "routing-oracle-bench")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "routing-oracle-bench")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "routing-oracle-bench received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P76RoutingOracleCliOptions {
+        options: RoutingOracleOptions {
+            corpora: corpora.ok_or_else(|| {
+                usage("routing-oracle-bench requires --corpus all|code|logs|json|csv|guard")
+            })?,
+            target_source_bytes: target_source_bytes
+                .ok_or_else(|| usage("routing-oracle-bench requires --target-source-bytes N"))?,
+            cycles: cycles.ok_or_else(|| usage("routing-oracle-bench requires --cycles N"))?,
+            queries: queries.ok_or_else(|| usage("routing-oracle-bench requires --queries N"))?,
+            updates: updates.ok_or_else(|| usage("routing-oracle-bench requires --updates N"))?,
+            deletes: deletes.ok_or_else(|| usage("routing-oracle-bench requires --deletes N"))?,
+            locality_profiles: locality_profiles
+                .ok_or_else(|| usage("routing-oracle-bench requires --locality all|clustered|random|mixed|hotspot"))?,
+            update_pressures: update_pressures
+                .ok_or_else(|| usage("routing-oracle-bench requires --update-pressure all|low|medium|high"))?,
+            compare: compare.ok_or_else(|| {
+                usage("routing-oracle-bench requires --compare oracle,mixed,hierarchical,linear,cubical,trie,graph,hypergraph")
+            })?,
+        },
+        export_dir: export_dir
+            .ok_or_else(|| usage("routing-oracle-bench requires --export-dir <path>"))?,
+        format: format
+            .ok_or_else(|| usage("routing-oracle-bench requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p76_virtual_space_estimate_options(
+    args: &[String],
+) -> Result<P76VirtualSpaceEstimateCliOptions, String> {
+    let mut topology = None;
+    let mut target_source_bytes = None;
+    let mut cells = None;
+    let mut fibers_per_cell = None;
+    let mut hierarchy_depth = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--topology" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("virtual-space-estimate requires a value after --topology"))?;
+            topology = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--topology=") {
+            topology = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--target-source-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("virtual-space-estimate requires a value after --target-source-bytes")
+            })?;
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "virtual-space-estimate",
+                "--target-source-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--target-source-bytes=") {
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "virtual-space-estimate",
+                "--target-source-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--cells" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("virtual-space-estimate requires a value after --cells"))?;
+            cells = Some(parse_positive_u64(
+                value,
+                "virtual-space-estimate",
+                "--cells",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cells=") {
+            cells = Some(parse_positive_u64(
+                value,
+                "virtual-space-estimate",
+                "--cells",
+            )?);
+            idx += 1;
+        } else if arg == "--fibers-per-cell" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("virtual-space-estimate requires a value after --fibers-per-cell")
+            })?;
+            fibers_per_cell = Some(parse_positive_u64(
+                value,
+                "virtual-space-estimate",
+                "--fibers-per-cell",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--fibers-per-cell=") {
+            fibers_per_cell = Some(parse_positive_u64(
+                value,
+                "virtual-space-estimate",
+                "--fibers-per-cell",
+            )?);
+            idx += 1;
+        } else if arg == "--hierarchy-depth" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("virtual-space-estimate requires a value after --hierarchy-depth")
+            })?;
+            hierarchy_depth = Some(parse_positive_u64(
+                value,
+                "virtual-space-estimate",
+                "--hierarchy-depth",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--hierarchy-depth=") {
+            hierarchy_depth = Some(parse_positive_u64(
+                value,
+                "virtual-space-estimate",
+                "--hierarchy-depth",
+            )?);
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("virtual-space-estimate requires a value after --format"))?;
+            format = Some(parse_format_value(value, "virtual-space-estimate")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "virtual-space-estimate")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "virtual-space-estimate received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P76VirtualSpaceEstimateCliOptions {
+        options: P76VirtualSpaceEstimateOptions {
+            topology: topology
+                .ok_or_else(|| usage("virtual-space-estimate requires --topology <name>"))?,
+            target_source_bytes: target_source_bytes
+                .ok_or_else(|| usage("virtual-space-estimate requires --target-source-bytes N"))?,
+            cells: cells.ok_or_else(|| usage("virtual-space-estimate requires --cells N"))?,
+            fibers_per_cell: fibers_per_cell
+                .ok_or_else(|| usage("virtual-space-estimate requires --fibers-per-cell N"))?,
+            hierarchy_depth: hierarchy_depth
+                .ok_or_else(|| usage("virtual-space-estimate requires --hierarchy-depth N"))?,
+        },
+        format: format
+            .ok_or_else(|| usage("virtual-space-estimate requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p76_localities(value: &str) -> Result<Vec<P74LocalityProfile>, String> {
+    if value == "all" {
+        return Ok(P74LocalityProfile::all());
+    }
+    let mut parsed = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        parsed.push(P74LocalityProfile::from_str(item).ok_or_else(|| {
+            usage(format!(
+                "routing-oracle-bench received unsupported locality '{}'; expected all|clustered|random|mixed|hotspot",
+                item
+            ))
+        })?);
+    }
+    Ok(parsed)
+}
+
+fn parse_p76_update_pressures(value: &str) -> Result<Vec<P74UpdatePressure>, String> {
+    if value == "all" {
+        return Ok(P74UpdatePressure::all());
+    }
+    let mut parsed = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        parsed.push(P74UpdatePressure::from_str(item).ok_or_else(|| {
+            usage(format!(
+                "routing-oracle-bench received unsupported update pressure '{}'; expected all|low|medium|high",
+                item
+            ))
+        })?);
+    }
+    Ok(parsed)
+}
+
+fn parse_p76_compare_targets(value: &str) -> Result<Vec<P76CompareTarget>, String> {
+    let mut parsed = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        parsed.push(P76CompareTarget::from_str(item).ok_or_else(|| {
+            usage(format!(
+                "routing-oracle-bench received unsupported compare target '{}'; expected oracle|mixed|hierarchical|linear|cubical|trie|graph|hypergraph",
+                item
+            ))
+        })?);
+    }
+    if parsed.is_empty() {
+        return Err(usage("routing-oracle-bench requires non-empty --compare"));
+    }
+    Ok(parsed)
+}
+
 fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
     match value {
         "true" | "on" | "yes" => Ok(true),
@@ -3565,6 +3988,8 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli cubical-store-bench --corpus all|code|logs|json|csv|guard --budget-bytes N --cycles N --queries N --updates N --deletes N --corruptions N --compact off|threshold|aggressive --adaptive on|off --compare-p72 baseline|off --export-dir <path> --format json|markdown",
         "  atlas-cli topology-living-bench --corpus all|code|logs|json|csv|guard --topology all|linear|cubical|trie|graph|hypergraph|hierarchical --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --locality clustered|random|mixed|hotspot --update-pressure low|medium|high --export-dir <path> --format json|markdown",
         "  atlas-cli mixed-topology-bench --corpus all|code|logs|json|csv|guard --router mixed|hierarchical-only|linear-only|cubical-only|trie-only|graph-only|hypergraph-only --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --locality clustered|random|mixed|hotspot --update-pressure low|medium|high --export-dir <path> --format json|markdown",
+        "  atlas-cli routing-oracle-bench --corpus all|code|logs|json|csv|guard --target-source-bytes N --cycles N --queries N --updates N --deletes N --locality all|clustered|random|mixed|hotspot --update-pressure all|low|medium|high --compare oracle,mixed,hierarchical,linear,cubical,trie,graph,hypergraph --export-dir <path> --format json|markdown",
+        "  atlas-cli virtual-space-estimate --topology mixed|linear|cubical|trie|graph|hypergraph|hierarchical --target-source-bytes N --cells N --fibers-per-cell N --hierarchy-depth N --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

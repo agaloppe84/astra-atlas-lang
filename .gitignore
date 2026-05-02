@@ -57,3 +57,6 @@ artifacts/p74/
 
 # P75 local mixed topology router exports
 artifacts/p75/
+
+# P76 local routing oracle and virtual space exports
+artifacts/p76/
