@@ -1,0 +1,197 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA P79 Results},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.60em}
+\renewcommand{\arraystretch}{1.12}
+\setlength{\emergencystretch}{3em}
+\sloppy
+
+\newcommand{\Metric}[2]{#1 & #2\\}
+\newcommand{\Decision}{\texttt{RECALIBRATE\_P79\_LEVEL1\_ROUTER\_POLICY}}
+
+\title{\textbf{ASTRA-P79 Results}\\Level-1 Address Space Router}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+P79 teste un routeur d'espace d'adressage de niveau 1. Le routeur choisit
+localement entre trie de chemins, DAG de contenu, espace produit type, graphe,
+hybride multi-index et baselines grille. Le pipeline reste living-memory:
+encode, open, address lookup, read/query, update/delete, audit, compact,
+close/reopen et verification du guard. Le routeur economise des bytes d'index
+et ameliore le cout d'adressage face a l'hybride seul, mais il rate de peu le
+seuil de promotion ratio/hybrid.
+\end{abstract}
+
+\section{Objectif}
+
+P78 a montre que l'espace hybride multi-index maximise le ratio living, tandis
+que le trie de chemins garde le meilleur cout d'adressage. P79 teste donc un
+routeur niveau 1 au lieu d'une topologie unique globale.
+
+L'espace virtuel procedural reste local: il se construit quand une adresse est
+atteinte. Les bytes virtuels reportes sont des equivalents de materialisation,
+pas des bytes stockes.
+
+\section{Syntaxe Atlas}
+
+P79 ajoute une syntaxe declarative specialisee:
+
+\begin{itemize}
+  \item \texttt{p79\_level1\_router\_probe};
+  \item \texttt{level1\_router};
+  \item \texttt{level1\_router\_gates}.
+\end{itemize}
+
+Les gates exigent living-memory, ratio living primaire, metriques d'espace
+virtuel, construction locale a l'adresse, guard sans faux gain, index niveau 1
+non cache, lookup borne, ratio routeur/oracle minimal et bytes virtuels comme
+equivalents.
+
+\section{Routeur et oracle}
+
+La policy \texttt{p79-router} route:
+\begin{itemize}
+  \item chemins, modules et JSON paths vers le trie;
+  \item chunks binaires vers le DAG de contenu;
+  \item namespaces types vers l'espace produit;
+  \item relations vers le graphe;
+  \item acces multiples vers l'hybride;
+  \item projections regulieres vers la grille 3D;
+  \item guard vers refus ou raw no-gain.
+\end{itemize}
+
+L'oracle compare la selection du routeur a la meilleure topologie observee par
+groupe de features.
+
+\section{Campagnes}
+
+\begin{longtable}{@{}p{0.55\linewidth}r@{}}
+\toprule
+Metrique & Valeur\\
+\midrule
+\Metric{target source bytes}{10,485,760}
+\Metric{actual source bytes}{10,485,760}
+\Metric{cycles standard / ambitious}{10 / 25}
+\Metric{queries standard / ambitious}{10,000 / 50,000}
+\Metric{updates standard / ambitious}{1,000 / 5,000}
+\Metric{deletes standard / ambitious}{100 / 500}
+\Metric{compact}{adaptive}
+\Metric{adaptive}{on}
+\bottomrule
+\end{longtable}
+
+\section{Espace virtuel}
+
+\begin{longtable}{@{}p{0.55\linewidth}r@{}}
+\toprule
+Metrique & Valeur\\
+\midrule
+\Metric{effective addresses}{222,464,000,000}
+\Metric{virtual cells}{10,000}
+\Metric{virtual fibers}{40,000}
+\Metric{virtual chunks}{40,000}
+\Metric{virtual effective bytes equivalent}{96,415,629}
+\Metric{limiting factor}{index size}
+\Metric{bytes are equivalent, not stored}{true}
+\bottomrule
+\end{longtable}
+
+\section{Resultats standard}
+
+\begin{longtable}{@{}p{0.55\linewidth}r@{}}
+\toprule
+Metrique & Valeur\\
+\midrule
+\Metric{best single topology}{hybrid multi-index}
+\Metric{ratio living router}{5.174901}
+\Metric{ratio living hybrid only}{5.340001}
+\Metric{ratio living oracle}{5.402000}
+\Metric{router / hybrid}{0.969082}
+\Metric{router / oracle}{0.957960}
+\Metric{lookup p95 router}{7.800}
+\Metric{lookup p95 path trie}{7.000}
+\Metric{lookup p95 bytes read}{3,840}
+\Metric{index bytes router}{1,080,033}
+\Metric{index bytes hybrid}{1,342,177}
+\Metric{index saved vs hybrid}{262,144}
+\Metric{wrong routes}{110}
+\Metric{wrong route cost}{359}
+\Metric{CRUD success rate}{1.000000}
+\Metric{retrieval success rate}{1.000000}
+\Metric{reopen equivalence}{true}
+\Metric{drift status}{NO\_DRIFT}
+\Metric{guard decision}{NO\_GO guard refused}
+\bottomrule
+\end{longtable}
+
+\section{Resultats ambitious}
+
+La campagne ambitious a ete executee. Les ratios et les couts d'adressage sont
+stables; le wrong route cost monte a 407 sous pression d'update plus forte. La
+decision ne change pas.
+
+\section{Phase map}
+
+\begin{longtable}{@{}p{0.55\linewidth}r@{}}
+\toprule
+Statut & Count\\
+\midrule
+\Metric{green promote}{82}
+\Metric{yellow recalibrate}{46}
+\Metric{red no-go}{11}
+\Metric{grey not tested}{0}
+\bottomrule
+\end{longtable}
+
+Les rouges viennent surtout des cas ou le routeur choisit une topologie trop
+simple pour des features relationnelles ou des projections regulieres.
+
+\section{Decision}
+
+\Decision
+
+Le routeur satisfait retrieval, CRUD, reopen, guard et drift. Il economise
+262,144 bytes d'index face a hybrid-only et reste dans l'enveloppe lookup du
+path-trie: \texttt{7.800 <= 7.000 * 1.15}. Il rate cependant le seuil
+ratio/hybrid: \texttt{0.969082 < 0.970000}.
+
+\section{Limites}
+
+Le routeur est deterministe et compact. Il ne pretend pas stocker plus
+d'information par bit. Il choisit seulement une topologie d'adressage locale
+pour reduire index et lookup quand la structure de la donnee s'y prete.
+
+\section{Recommandation P80}
+
+P80 devrait calibrer le routeur niveau 1 contre l'oracle: corriger les mauvais
+routages relation-heavy, logs sous haute pression et projections CSV, tout en
+gardant le gain d'index et en franchissant le seuil \texttt{0.97 * hybrid}.
+
+\end{document}

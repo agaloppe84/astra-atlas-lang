@@ -572,6 +572,44 @@ Decision attendue par defaut: `RECALIBRATE_P78_LEVEL1_TOPOLOGY` tant que le
 meilleur ratio et le meilleur cout d'adressage ne pointent pas vers une meme
 topologie dominante.
 
+## Validation P79 level-1 address router
+
+P79 ajoute `level1-router-bench` et `level1-router-estimate` pour tester un
+routeur d'espace d'adressage niveau 1. Le routeur choisit localement entre
+`path_trie`, `content_addressed_dag`, `product_typed_space`,
+`graph_address_space`, `hybrid_multi_index_space` et les baselines grille. Le
+bench reste living-memory et garde les bytes virtuels comme equivalents de
+materialisation.
+
+```bash
+cargo run -p atlas-cli -- level1-router-bench \
+  --corpus all \
+  --level1-router p79-router \
+  --target-source-bytes 10485760 \
+  --cycles 10 \
+  --queries 10000 \
+  --updates 1000 \
+  --deletes 100 \
+  --compact adaptive \
+  --adaptive on \
+  --compare router,oracle,hybrid,path-trie,product-typed,content-dag \
+  --export-dir artifacts/p79/level1_router_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p79/` et sont ignores par Git. Voir
+[docs/validation/astra-p79-level1-address-space-router.md](docs/validation/astra-p79-level1-address-space-router.md),
+l'audit de tests
+[docs/analysis/ASTRA-P79-test-stack-audit.md](docs/analysis/ASTRA-P79-test-stack-audit.md),
+le rapport d'analyse
+[docs/analysis/ASTRA-P79-level1-address-space-router-analysis.md](docs/analysis/ASTRA-P79-level1-address-space-router-analysis.md)
+et la note spec
+[docs/specs/ASTRA_LEVEL1_ADDRESS_ROUTER_NOTE_P79.md](docs/specs/ASTRA_LEVEL1_ADDRESS_ROUTER_NOTE_P79.md).
+
+Decision P79: `RECALIBRATE_P79_LEVEL1_ROUTER_POLICY` car le routeur economise
+262,144 bytes d'index et garde le lookup proche du path-trie, mais son
+ratio/hybrid observe est `0.969082`, juste sous le seuil `0.970000`.
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

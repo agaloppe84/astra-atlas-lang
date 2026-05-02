@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 92] {
+fn invalid_cases() -> [InvalidCase; 100] {
     [
         InvalidCase {
             name: "bad_version",
@@ -748,6 +748,70 @@ fn invalid_cases() -> [InvalidCase; 92] {
             family: None,
             field: None,
             message: "unknown block 'p78_level1_probe'",
+        },
+        InvalidCase {
+            name: "p79_unknown_level1_route",
+            text: include_str!("../examples/invalid/p79_unknown_level1_route.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p79_level1_router_probe'",
+        },
+        InvalidCase {
+            name: "p79_missing_guard_policy",
+            text: include_str!("../examples/invalid/p79_missing_guard_policy.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p79_level1_router_probe'",
+        },
+        InvalidCase {
+            name: "p79_hidden_level1_index_storage",
+            text: include_str!("../examples/invalid/p79_hidden_level1_index_storage.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p79_level1_router_probe'",
+        },
+        InvalidCase {
+            name: "p79_non_living_level1_decision",
+            text: include_str!("../examples/invalid/p79_non_living_level1_decision.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p79_level1_router_probe'",
+        },
+        InvalidCase {
+            name: "p79_missing_router_oracle_gate",
+            text: include_str!("../examples/invalid/p79_missing_router_oracle_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p79_level1_router_probe'",
+        },
+        InvalidCase {
+            name: "p79_unbounded_address_lookup",
+            text: include_str!("../examples/invalid/p79_unbounded_address_lookup.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p79_level1_router_probe'",
+        },
+        InvalidCase {
+            name: "p79_virtual_bytes_claim_stored",
+            text: include_str!("../examples/invalid/p79_virtual_bytes_claim_stored.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p79_level1_router_probe'",
+        },
+        InvalidCase {
+            name: "p79_missing_local_on_address",
+            text: include_str!("../examples/invalid/p79_missing_local_on_address.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p79_level1_router_probe'",
         },
     ]
 }

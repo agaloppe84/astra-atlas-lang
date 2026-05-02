@@ -15,8 +15,9 @@ use crate::{
     P70ReplayFixtureKind, P71FiberStoreOptions, P72CompactionPolicy, P72LivingStoreOptions,
     P73CompareP72, P73CubicalStoreOptions, P74CompactionPolicy, P74LocalityProfile,
     P74TopologyLivingOptions, P74UpdatePressure, P76CompareTarget, P76VirtualSpaceEstimateOptions,
-    P77CalibrationGridKind, P77RouterCalibrationOptions, P78Level1SpaceOptions, RealDataCorpusKind,
-    RouterLivingOptions, RouterPolicy, RoutingOracleOptions, TopologyKind, WorkloadMode,
+    P77CalibrationGridKind, P77RouterCalibrationOptions, P78Level1SpaceOptions, P79CompareTarget,
+    P79Level1RouterOptions, RealDataCorpusKind, RouterLivingOptions, RouterPolicy,
+    RoutingOracleOptions, TopologyKind, WorkloadMode,
 };
 use std::env;
 
@@ -82,12 +83,30 @@ fn run(args: &[String]) -> Result<(), String> {
         "virtual-space-estimate" => virtual_space_estimate_command(args),
         "level1-space-bench" => level1_space_bench_command(args),
         "level1-space-estimate" => level1_space_estimate_command(args),
+        "level1-router-bench" => level1_router_bench_command(args),
+        "level1-router-estimate" => level1_router_estimate_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
 }
 
 fn check_path(path: &str) -> Result<(), String> {
+    if crate::p79_level1_file_looks_like(path) {
+        return match crate::p79_level1_router_contract_report_file(path) {
+            Ok(report) => {
+                println!(
+                    "OK: p79_level1_router={} default={} living={} local_on_address={} oracle_min={:.3}",
+                    report.router_policy,
+                    report.default_topology,
+                    report.living_memory_only,
+                    report.local_on_address,
+                    report.router_oracle_ratio_min
+                );
+                Ok(())
+            }
+            Err(diagnostic) => Err(diagnostic.to_string()),
+        };
+    }
     if crate::p78_level1_file_looks_like(path) {
         return match crate::p78_level1_contract_report_file(path) {
             Ok(report) => {
@@ -724,6 +743,38 @@ fn level1_space_estimate_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn level1_router_bench_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p79_level1_router_options(&args[1..])?;
+    let report = crate::p79_level1_router_bench(options.options, &options.export_dir)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p79_level1_router_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p79_markdown(&report)),
+    }
+    Ok(())
+}
+
+fn level1_router_estimate_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p79_level1_router_estimate_options(&args[1..])?;
+    let estimate =
+        crate::p79_level1_router_estimate(options.level1_router, options.target_source_bytes);
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p79_level1_router_estimate_json(&estimate)),
+        OutputFormat::Markdown => println!(
+            "- level1_router: `{}`\n- virtual_cell_count: `{}`\n- virtual_fiber_count: `{}`\n- virtual_effective_bytes_equivalent: `{}`\n- level1_router_index_bytes: `{}`\n- bytes_are_equivalent_not_stored: `{}`",
+            estimate.level1_router,
+            estimate.virtual_space_metrics.virtual_cell_count,
+            estimate.virtual_space_metrics.virtual_fiber_count,
+            estimate
+                .virtual_space_metrics
+                .virtual_effective_bytes_equivalent,
+            estimate.level1_router_index_bytes,
+            estimate.bytes_are_equivalent_not_stored
+        ),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -873,6 +924,20 @@ struct P78Level1SpaceCliOptions {
 #[derive(Debug, Clone, PartialEq)]
 struct P78Level1EstimateCliOptions {
     options: Level1VirtualSpaceEstimateOptions,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P79Level1RouterCliOptions {
+    options: P79Level1RouterOptions,
+    export_dir: String,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P79Level1RouterEstimateCliOptions {
+    level1_router: String,
+    target_source_bytes: u64,
     format: OutputFormat,
 }
 
@@ -4266,6 +4331,278 @@ fn parse_p78_level1_space_estimate_options(
     })
 }
 
+fn parse_p79_level1_router_options(args: &[String]) -> Result<P79Level1RouterCliOptions, String> {
+    let mut corpora = None;
+    let mut level1_router = None;
+    let mut target_source_bytes = None;
+    let mut cycles = None;
+    let mut queries = None;
+    let mut updates = None;
+    let mut deletes = None;
+    let mut compact = None;
+    let mut adaptive = None;
+    let mut compare = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--corpus" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --corpus"))?;
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corpus=") {
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 1;
+        } else if arg == "--level1-router" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-router-bench requires a value after --level1-router")
+            })?;
+            level1_router = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--level1-router=") {
+            level1_router = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--target-source-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-router-bench requires a value after --target-source-bytes")
+            })?;
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "level1-router-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--target-source-bytes=") {
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "level1-router-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--cycles" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --cycles"))?;
+            cycles = Some(parse_positive_usize(
+                value,
+                "level1-router-bench",
+                "--cycles",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cycles=") {
+            cycles = Some(parse_positive_usize(
+                value,
+                "level1-router-bench",
+                "--cycles",
+            )?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(
+                value,
+                "level1-router-bench",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "level1-router-bench",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--updates" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --updates"))?;
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "level1-router-bench",
+                "--updates",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--updates=") {
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "level1-router-bench",
+                "--updates",
+            )?);
+            idx += 1;
+        } else if arg == "--deletes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --deletes"))?;
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "level1-router-bench",
+                "--deletes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--deletes=") {
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "level1-router-bench",
+                "--deletes",
+            )?);
+            idx += 1;
+        } else if arg == "--compact" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --compact"))?;
+            compact = Some(parse_p74_compact_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--compact=") {
+            compact = Some(parse_p74_compact_value(value)?);
+            idx += 1;
+        } else if arg == "--adaptive" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --adaptive"))?;
+            adaptive = Some(parse_bool_value(
+                value,
+                "level1-router-bench",
+                "--adaptive",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--adaptive=") {
+            adaptive = Some(parse_bool_value(
+                value,
+                "level1-router-bench",
+                "--adaptive",
+            )?);
+            idx += 1;
+        } else if arg == "--compare" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --compare"))?;
+            compare = Some(parse_p79_compare_targets(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--compare=") {
+            compare = Some(parse_p79_compare_targets(value)?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-bench requires a value after --format"))?;
+            format = Some(parse_format_value(value, "level1-router-bench")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "level1-router-bench")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "level1-router-bench received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P79Level1RouterCliOptions {
+        options: P79Level1RouterOptions {
+            corpora: corpora.ok_or_else(|| {
+                usage("level1-router-bench requires --corpus all|code|logs|json|csv|guard")
+            })?,
+            level1_router: level1_router
+                .ok_or_else(|| usage("level1-router-bench requires --level1-router <id>"))?,
+            target_source_bytes: target_source_bytes
+                .ok_or_else(|| usage("level1-router-bench requires --target-source-bytes N"))?,
+            cycles: cycles.ok_or_else(|| usage("level1-router-bench requires --cycles N"))?,
+            queries: queries.ok_or_else(|| usage("level1-router-bench requires --queries N"))?,
+            updates: updates.ok_or_else(|| usage("level1-router-bench requires --updates N"))?,
+            deletes: deletes.ok_or_else(|| usage("level1-router-bench requires --deletes N"))?,
+            compact: compact.ok_or_else(|| {
+                usage("level1-router-bench requires --compact off|threshold|aggressive|adaptive")
+            })?,
+            adaptive: adaptive
+                .ok_or_else(|| usage("level1-router-bench requires --adaptive on|off"))?,
+            compare: compare.ok_or_else(|| {
+                usage("level1-router-bench requires --compare router,oracle,hybrid,path-trie,product-typed,content-dag")
+            })?,
+        },
+        export_dir: export_dir
+            .ok_or_else(|| usage("level1-router-bench requires --export-dir <path>"))?,
+        format: format.ok_or_else(|| usage("level1-router-bench requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p79_level1_router_estimate_options(
+    args: &[String],
+) -> Result<P79Level1RouterEstimateCliOptions, String> {
+    let mut level1_router = None;
+    let mut target_source_bytes = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--level1-router" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-router-estimate requires a value after --level1-router")
+            })?;
+            level1_router = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--level1-router=") {
+            level1_router = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--target-source-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-router-estimate requires a value after --target-source-bytes")
+            })?;
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "level1-router-estimate",
+                "--target-source-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--target-source-bytes=") {
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "level1-router-estimate",
+                "--target-source-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-router-estimate requires a value after --format"))?;
+            format = Some(parse_format_value(value, "level1-router-estimate")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "level1-router-estimate")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "level1-router-estimate received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P79Level1RouterEstimateCliOptions {
+        level1_router: level1_router
+            .ok_or_else(|| usage("level1-router-estimate requires --level1-router <id>"))?,
+        target_source_bytes: target_source_bytes
+            .ok_or_else(|| usage("level1-router-estimate requires --target-source-bytes N"))?,
+        format: format
+            .ok_or_else(|| usage("level1-router-estimate requires --format json|markdown"))?,
+    })
+}
+
 fn parse_p76_localities(value: &str) -> Result<Vec<P74LocalityProfile>, String> {
     if value == "all" {
         return Ok(P74LocalityProfile::all());
@@ -4307,6 +4644,33 @@ fn parse_p78_level1_topology(value: &str) -> Result<Level1TopologyKind, String> 
             value
         ))
     })
+}
+
+fn parse_p79_compare_targets(value: &str) -> Result<Vec<P79CompareTarget>, String> {
+    if value == "all" {
+        return Ok(vec![
+            P79CompareTarget::Router,
+            P79CompareTarget::Oracle,
+            P79CompareTarget::HybridOnly,
+            P79CompareTarget::PathTrieOnly,
+            P79CompareTarget::ProductTypedOnly,
+            P79CompareTarget::ContentDagOnly,
+        ]);
+    }
+    let mut targets = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        targets.push(P79CompareTarget::from_str(item).ok_or_else(|| {
+            usage(format!(
+                "level1-router-bench received unsupported compare target '{}'; expected router,oracle,hybrid,path-trie,product-typed,content-dag",
+                item
+            ))
+        })?);
+    }
+    if targets.is_empty() {
+        return Err(usage("level1-router-bench requires non-empty --compare"));
+    }
+    Ok(targets)
 }
 
 fn parse_p76_update_pressures(value: &str) -> Result<Vec<P74UpdatePressure>, String> {
@@ -4706,6 +5070,8 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli virtual-space-estimate --topology mixed|linear|cubical|trie|graph|hypergraph|hierarchical --target-source-bytes N --cells N --fibers-per-cell N --hierarchy-depth N --format json|markdown",
         "  atlas-cli level1-space-bench --corpus all|code|logs|json|csv|guard --level1-topology all|grid2d|grid3d|tree|path-trie|content-dag|graph|product-typed|hybrid-multi-index --fiber-router p77-calibrated --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --export-dir <path> --format json|markdown",
         "  atlas-cli level1-space-estimate --level1-topology grid2d|grid3d|tree|path-trie|content-dag|graph|product-typed|hybrid-multi-index --target-source-bytes N --address-bits N --file-type-count N --object-count N --chunk-count N --version-count N --fibers-per-object N --format json|markdown",
+        "  atlas-cli level1-router-bench --corpus all|code|logs|json|csv|guard --level1-router p79-router --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --compare router,oracle,hybrid,path-trie,product-typed,content-dag --export-dir <path> --format json|markdown",
+        "  atlas-cli level1-router-estimate --level1-router p79-router --target-source-bytes N --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

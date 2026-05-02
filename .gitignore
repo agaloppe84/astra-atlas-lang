@@ -66,3 +66,6 @@ artifacts/p77/
 
 # P78 local level-1 virtual space and universal fiber store exports
 artifacts/p78/
+
+# P79 local level-1 address router exports
+artifacts/p79/

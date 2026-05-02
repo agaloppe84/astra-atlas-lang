@@ -1,0 +1,4 @@
+atlas version=0.1;
+p79_level1_router_probe mode=level1_address_router;
+level1_router id=p79-router default=product_typed_space path_like=quantum_space chunked_binary=content_addressed_dag typed_namespace=product_typed_space relation_heavy=graph_address_space multi_access=hybrid_multi_index_space regular_grid=grid3d guard_policy=refuse_or_raw_no_gain;
+level1_router_gates living_memory_only=true ratio_living_primary=true virtual_space_metrics_required=true local_on_address=true guard_no_false_gain=true hidden_level1_index_storage=false address_lookup_bounded=true router_oracle_ratio_min=0.97 virtual_bytes_claim=equivalent;

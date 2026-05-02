@@ -70,6 +70,16 @@ materialisation, pas des bytes stockes. Toute topologie ou tout routeur doit
 preserver la construction locale de l'espace virtuel quand une adresse est
 atteinte.
 
+## Level-1 routing
+
+A partir de P79, la topologie de niveau 1 peut etre routee localement par type
+de fichier, forme d'adresse et besoin d'acces. Les decisions restent
+living-memory: le routeur ne remplace pas les mesures `ratio_living`,
+`cold_persisted_bytes`, `runtime_peak_bytes`, cout d'index, lookup p95,
+retrieval, CRUD, guard et reopen. Un routeur niveau 1 ne cree pas plus
+d'information; il reduit potentiellement le cout d'index et d'adressage en
+evitant d'utiliser `hybrid_multi_index_space` partout.
+
 ## LaTeX quality
 
 A partir de P75, Codex doit anticiper les warnings LaTeX avant de figer un PDF
