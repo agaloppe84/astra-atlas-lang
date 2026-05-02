@@ -1,0 +1,173 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA P78 Results},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.62em}
+\renewcommand{\arraystretch}{1.12}
+\setlength{\emergencystretch}{2em}
+
+\newcommand{\Metric}[2]{#1 & #2\\}
+\newcommand{\Decision}{\texttt{RECALIBRATE\_P78\_LEVEL1\_TOPOLOGY}}
+
+\title{\textbf{ASTRA-P78 Results}\\Level-1 Virtual Space and Universal Fiber Store}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+P78 teste la topologie de niveau 1 de l'espace d'adressage virtuel. Le meilleur
+candidat observe est l'espace hybride multi-index: il ameliore le ratio living
+tout en gardant un store universel avec fallback brut explicite, guard refuse,
+reopen equivalence et aucun drift dur. La decision reste prudente car le meilleur
+cout d'adressage revient encore au trie de chemins.
+\end{abstract}
+
+\section{Objectif}
+
+P78 deplace l'analyse au-dessus des fibres: il compare la topologie de l'espace
+d'adressage virtuel de niveau 1. L'espace virtuel ne doit pas etre materialise
+globalement. Il est calcule localement quand une adresse est atteinte.
+
+Le jalon ajoute aussi un store universel capable d'accepter des fichiers texte,
+code, JSON, CSV, logs, binaires structures, binaires inconnus via fallback brut,
+et guard incompressible refuse.
+
+\section{Topologies}
+
+Les topologies testees sont:
+\begin{itemize}
+  \item grille 2D et grille 3D;
+  \item arbre hierarchique;
+  \item trie de chemins;
+  \item DAG adresse par contenu;
+  \item graphe d'adresses;
+  \item espace produit type;
+  \item espace hybride multi-index.
+\end{itemize}
+
+Le candidat gagnant par ratio est l'espace hybride multi-index. Le meilleur cout
+d'adressage est le trie de chemins. Cette dissociation motive la recalibration
+plutot qu'une promotion.
+
+\section{Campagnes living-memory}
+
+Les campagnes significatives utilisent `10,485,760` octets de donnees sources,
+un store vivant, open/read/query/update/delete/audit/compact/close/reopen, et
+verification du guard incompressible.
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur\\
+\midrule
+\Metric{target source bytes}{10,485,760}
+\Metric{actual source bytes}{10,485,760}
+\Metric{cycles standard / ambitious}{10 / 25}
+\Metric{queries standard / ambitious}{10,000 / 50,000}
+\Metric{updates standard / ambitious}{1,000 / 5,000}
+\Metric{deletes standard / ambitious}{100 / 500}
+\Metric{best level-1 topology}{hybrid multi-index}
+\Metric{phase green / yellow / red}{4 / 2 / 2}
+\bottomrule
+\end{longtable}
+
+\section{Espace virtuel}
+
+Les octets virtuels ci-dessous sont des equivalents de materialisation, pas des
+octets stockes.
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur\\
+\midrule
+\Metric{level1 declared addresses}{281,600,000,000}
+\Metric{level1 reachable addresses}{247,808,000,000}
+\Metric{level1 effective addresses}{222,464,000,000}
+\Metric{virtual cells}{10,000}
+\Metric{virtual fibers}{40,000}
+\Metric{virtual chunks}{40,000}
+\Metric{virtual versions}{4}
+\Metric{virtual effective bytes equivalent}{96,415,629}
+\Metric{materialization avoidance ratio}{11.639128}
+\Metric{limiting factor}{index size}
+\bottomrule
+\end{longtable}
+
+\section{Resultats}
+
+\begin{longtable}{@{}p{0.58\linewidth}r@{}}
+\toprule
+Metrique & Valeur\\
+\midrule
+\Metric{cold persisted bytes}{1,268,502}
+\Metric{runtime peak bytes}{559,633}
+\Metric{ratio living}{5.340001}
+\Metric{address lookup p95 steps}{8.000}
+\Metric{address lookup p95 bytes read}{4,608}
+\Metric{CRUD success rate}{1.000000}
+\Metric{roundtrip / decode / retrieval}{1.000000}
+\Metric{raw fallback bytes}{327,680}
+\Metric{guard source bytes}{524,288}
+\Metric{guard store bytes}{0}
+\Metric{drift status}{NO\_DRIFT}
+\Metric{reopen equivalence}{true}
+\bottomrule
+\end{longtable}
+
+\section{Universal Codec}
+
+Le store accepte les familles de fichiers via codecs specialises ou fallback
+brut explicite: grammar tokens, JSON path, CSV sparse, dictionnaire texte,
+deduplication de chunks, DAG de contenu, fallback brut et guard refuse.
+
+Le fallback brut est compte comme stockage reel. Il ne contribue pas a un faux
+gain. Le guard incompressible reste:
+
+\texttt{NO\_GO\_GUARD\_INCOMPRESSIBLE\_REFUSED}.
+
+\section{Decision}
+
+\Decision
+
+Raison principale: l'espace hybride multi-index maximise \texttt{ratio\_living}, mais
+le trie de chemins reste meilleur pour le cout d'adressage. P78 recommande donc
+de tester en P79 un routeur de niveau 1 par type de fichier et feature locale.
+
+\section{Limites}
+
+Les corpus binaires image/video sont des substituts deterministes locaux, pas
+des datasets externes lourds. La recherche niveau 1 reste coarse. Les octets
+virtuels sont des equivalents de materialisation; ils ne doivent pas etre lus
+comme de l'information stockee gratuitement.
+
+\section{P79}
+
+P79 devrait evaluer un routeur de niveau 1: trie pour chemins, DAG de contenu
+pour chunks et deduplication, espace produit type pour namespace/type/objet,
+graphe pour relations, et hybride multi-index seulement quand son overhead est
+justifie.
+
+\end{document}

@@ -535,6 +535,43 @@ et le rapport d'analyse
 Decision attendue par defaut: `RECALIBRATE_P77_ROUTER_THRESHOLDS` tant que le
 routeur calibre reste sous tous les gates stricts de promotion.
 
+## Validation P78 level-1 virtual space
+
+P78 ajoute `level1-space-bench` et `level1-space-estimate` pour tester la
+topologie de niveau 1 de l'espace d'adressage virtuel. Le bench reste
+living-memory, utilise environ 10 MiB de donnees locales deterministes, garde
+les octets virtuels comme equivalents de materialisation, et introduit un
+`UniversalFiberStore` avec fallback brut explicite pour les fichiers inconnus.
+
+```bash
+cargo run -p atlas-cli -- level1-space-bench \
+  --corpus all \
+  --level1-topology all \
+  --fiber-router p77-calibrated \
+  --target-source-bytes 10485760 \
+  --cycles 10 \
+  --queries 10000 \
+  --updates 1000 \
+  --deletes 100 \
+  --compact adaptive \
+  --adaptive on \
+  --export-dir artifacts/p78/level1_space_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p78/` et sont ignores par Git. Voir
+[docs/validation/astra-p78-level1-virtual-space-universal-fiber-store.md](docs/validation/astra-p78-level1-virtual-space-universal-fiber-store.md),
+l'audit de tests
+[docs/analysis/ASTRA-P78-test-stack-audit.md](docs/analysis/ASTRA-P78-test-stack-audit.md),
+le rapport d'analyse
+[docs/analysis/ASTRA-P78-level1-virtual-space-universal-fiber-store-analysis.md](docs/analysis/ASTRA-P78-level1-virtual-space-universal-fiber-store-analysis.md)
+et la note spec
+[docs/specs/ASTRA_LEVEL1_ADDRESS_SPACE_NOTE_P78.md](docs/specs/ASTRA_LEVEL1_ADDRESS_SPACE_NOTE_P78.md).
+
+Decision attendue par defaut: `RECALIBRATE_P78_LEVEL1_TOPOLOGY` tant que le
+meilleur ratio et le meilleur cout d'adressage ne pointent pas vers une meme
+topologie dominante.
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

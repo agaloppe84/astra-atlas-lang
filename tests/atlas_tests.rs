@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 84] {
+fn invalid_cases() -> [InvalidCase; 92] {
     [
         InvalidCase {
             name: "bad_version",
@@ -684,6 +684,70 @@ fn invalid_cases() -> [InvalidCase; 84] {
             family: None,
             field: None,
             message: "unknown block 'p77_calibration_probe'",
+        },
+        InvalidCase {
+            name: "p78_global_materialization_allowed",
+            text: include_str!("../examples/invalid/p78_global_materialization_allowed.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p78_level1_probe'",
+        },
+        InvalidCase {
+            name: "p78_virtual_bytes_claim_stored",
+            text: include_str!("../examples/invalid/p78_virtual_bytes_claim_stored.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p78_level1_probe'",
+        },
+        InvalidCase {
+            name: "p78_missing_local_on_address",
+            text: include_str!("../examples/invalid/p78_missing_local_on_address.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p78_level1_probe'",
+        },
+        InvalidCase {
+            name: "p78_missing_virtual_space_metrics",
+            text: include_str!("../examples/invalid/p78_missing_virtual_space_metrics.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p78_level1_probe'",
+        },
+        InvalidCase {
+            name: "p78_raw_fallback_false_gain",
+            text: include_str!("../examples/invalid/p78_raw_fallback_false_gain.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p78_level1_probe'",
+        },
+        InvalidCase {
+            name: "p78_unknown_level1_topology",
+            text: include_str!("../examples/invalid/p78_unknown_level1_topology.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p78_level1_probe'",
+        },
+        InvalidCase {
+            name: "p78_unbounded_address_lookup",
+            text: include_str!("../examples/invalid/p78_unbounded_address_lookup.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p78_level1_probe'",
+        },
+        InvalidCase {
+            name: "p78_missing_guard_gate",
+            text: include_str!("../examples/invalid/p78_missing_guard_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p78_level1_probe'",
         },
     ]
 }

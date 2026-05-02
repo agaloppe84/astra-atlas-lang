@@ -6,17 +6,17 @@ use crate::{
     p63_campaign_report_file_with_runs, p63_campaign_report_to_json,
     p63_campaign_set_summary_json_file, p63_campaign_summary_json_file, run_workload_file,
     validate_file, write_p63_campaign_exports, write_p64_campaign_exports, DiagnosticCode,
-    FiberGenerationStrategy, P63ThresholdProfile, P64GenerationPolicy, P64RatioRealishOptions,
-    P64WorkloadKind, P65ActorCalibrationOptions, P65ActorStrategy, P65JournalPolicy,
-    P65QueryLocality, P65RatioActorsOptions, P66JournalPolicy, P66RateProfile,
-    P66RatioFibersOptions, P67AuditPolicy, P67CachePolicy, P67CompactionPolicy,
-    P67FiberCalibrationOptions, P67FiberProjectionDepth, P67QueryLocality, P68PromotionOptions,
-    P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, P71FiberStoreOptions,
-    P72CompactionPolicy, P72LivingStoreOptions, P73CompareP72, P73CubicalStoreOptions,
-    P74CompactionPolicy, P74LocalityProfile, P74TopologyLivingOptions, P74UpdatePressure,
-    P76CompareTarget, P76VirtualSpaceEstimateOptions, P77CalibrationGridKind,
-    P77RouterCalibrationOptions, RealDataCorpusKind, RouterLivingOptions, RouterPolicy,
-    RoutingOracleOptions, TopologyKind, WorkloadMode,
+    FiberGenerationStrategy, Level1TopologyKind, Level1VirtualSpaceEstimateOptions,
+    P63ThresholdProfile, P64GenerationPolicy, P64RatioRealishOptions, P64WorkloadKind,
+    P65ActorCalibrationOptions, P65ActorStrategy, P65JournalPolicy, P65QueryLocality,
+    P65RatioActorsOptions, P66JournalPolicy, P66RateProfile, P66RatioFibersOptions, P67AuditPolicy,
+    P67CachePolicy, P67CompactionPolicy, P67FiberCalibrationOptions, P67FiberProjectionDepth,
+    P67QueryLocality, P68PromotionOptions, P69ContractRunOptions, P70ContractReplayOptions,
+    P70ReplayFixtureKind, P71FiberStoreOptions, P72CompactionPolicy, P72LivingStoreOptions,
+    P73CompareP72, P73CubicalStoreOptions, P74CompactionPolicy, P74LocalityProfile,
+    P74TopologyLivingOptions, P74UpdatePressure, P76CompareTarget, P76VirtualSpaceEstimateOptions,
+    P77CalibrationGridKind, P77RouterCalibrationOptions, P78Level1SpaceOptions, RealDataCorpusKind,
+    RouterLivingOptions, RouterPolicy, RoutingOracleOptions, TopologyKind, WorkloadMode,
 };
 use std::env;
 
@@ -80,12 +80,30 @@ fn run(args: &[String]) -> Result<(), String> {
         "routing-oracle-bench" => routing_oracle_bench_command(args),
         "routing-oracle-calibrate" => routing_oracle_calibrate_command(args),
         "virtual-space-estimate" => virtual_space_estimate_command(args),
+        "level1-space-bench" => level1_space_bench_command(args),
+        "level1-space-estimate" => level1_space_estimate_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
     }
 }
 
 fn check_path(path: &str) -> Result<(), String> {
+    if crate::p78_level1_file_looks_like(path) {
+        return match crate::p78_level1_contract_report_file(path) {
+            Ok(report) => {
+                println!(
+                    "OK: p78_level1_space={} topology={} address_bits={} local_on_address={} guard={}",
+                    report.space_id,
+                    report.topology,
+                    report.address_bits,
+                    report.local_on_address,
+                    report.guard_no_false_gain
+                );
+                Ok(())
+            }
+            Err(diagnostic) => Err(diagnostic.to_string()),
+        };
+    }
     if crate::p77_router_policy_file_looks_like(path) {
         return match crate::p77_router_policy_report_file(path) {
             Ok(report) => {
@@ -677,6 +695,35 @@ fn virtual_space_estimate_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn level1_space_bench_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p78_level1_space_options(&args[1..])?;
+    let report = crate::p78_level1_space_bench(options.options, &options.export_dir)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p78_level1_space_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p78_level1_space_markdown(&report)),
+    }
+    Ok(())
+}
+
+fn level1_space_estimate_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p78_level1_space_estimate_options(&args[1..])?;
+    let metrics = crate::p78_level1_space_estimate(options.options);
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p78_virtual_space_metrics_json(&metrics)),
+        OutputFormat::Markdown => println!(
+            "- level1_effective_address_count: `{}`\n- virtual_cell_count: `{}`\n- virtual_fiber_count: `{}`\n- virtual_effective_bytes_equivalent: `{}`\n- limiting_factor: `{}`\n- bytes_are_equivalent_not_stored: `{}`",
+            metrics.level1_effective_address_count,
+            metrics.virtual_cell_count,
+            metrics.virtual_fiber_count,
+            metrics.virtual_effective_bytes_equivalent,
+            metrics.limiting_factor,
+            metrics.bytes_are_equivalent_not_stored
+        ),
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Json,
@@ -813,6 +860,19 @@ struct P76VirtualSpaceEstimateCliOptions {
 struct P77RouterCalibrationCliOptions {
     options: P77RouterCalibrationOptions,
     export_dir: String,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P78Level1SpaceCliOptions {
+    options: P78Level1SpaceOptions,
+    export_dir: String,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P78Level1EstimateCliOptions {
+    options: Level1VirtualSpaceEstimateOptions,
     format: OutputFormat,
 }
 
@@ -3822,6 +3882,390 @@ fn parse_p76_virtual_space_estimate_options(
     })
 }
 
+fn parse_p78_level1_space_options(args: &[String]) -> Result<P78Level1SpaceCliOptions, String> {
+    let mut corpora = None;
+    let mut level1_topologies = None;
+    let mut fiber_router = None;
+    let mut target_source_bytes = None;
+    let mut cycles = None;
+    let mut queries = None;
+    let mut updates = None;
+    let mut deletes = None;
+    let mut compact = None;
+    let mut adaptive = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--corpus" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --corpus"))?;
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corpus=") {
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 1;
+        } else if arg == "--level1-topology" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-bench requires a value after --level1-topology")
+            })?;
+            level1_topologies = Some(parse_p78_level1_topologies(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--level1-topology=") {
+            level1_topologies = Some(parse_p78_level1_topologies(value)?);
+            idx += 1;
+        } else if arg == "--fiber-router" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --fiber-router"))?;
+            fiber_router = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--fiber-router=") {
+            fiber_router = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--target-source-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-bench requires a value after --target-source-bytes")
+            })?;
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "level1-space-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--target-source-bytes=") {
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "level1-space-bench",
+                "--target-source-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--cycles" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --cycles"))?;
+            cycles = Some(parse_positive_usize(
+                value,
+                "level1-space-bench",
+                "--cycles",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cycles=") {
+            cycles = Some(parse_positive_usize(
+                value,
+                "level1-space-bench",
+                "--cycles",
+            )?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --queries"))?;
+            queries = Some(parse_positive_usize(
+                value,
+                "level1-space-bench",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "level1-space-bench",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--updates" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --updates"))?;
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "level1-space-bench",
+                "--updates",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--updates=") {
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "level1-space-bench",
+                "--updates",
+            )?);
+            idx += 1;
+        } else if arg == "--deletes" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --deletes"))?;
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "level1-space-bench",
+                "--deletes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--deletes=") {
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "level1-space-bench",
+                "--deletes",
+            )?);
+            idx += 1;
+        } else if arg == "--compact" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --compact"))?;
+            compact = Some(parse_p74_compact_value(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--compact=") {
+            compact = Some(parse_p74_compact_value(value)?);
+            idx += 1;
+        } else if arg == "--adaptive" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --adaptive"))?;
+            adaptive = Some(parse_bool_value(value, "level1-space-bench", "--adaptive")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--adaptive=") {
+            adaptive = Some(parse_bool_value(value, "level1-space-bench", "--adaptive")?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --export-dir"))?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-bench requires a value after --format"))?;
+            format = Some(parse_format_value(value, "level1-space-bench")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "level1-space-bench")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "level1-space-bench received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P78Level1SpaceCliOptions {
+        options: P78Level1SpaceOptions {
+            corpora: corpora.ok_or_else(|| {
+                usage("level1-space-bench requires --corpus all|code|logs|json|csv|guard")
+            })?,
+            level1_topologies: level1_topologies.ok_or_else(|| {
+                usage("level1-space-bench requires --level1-topology all|grid2d|grid3d|tree|path-trie|content-dag|graph|product-typed|hybrid-multi-index")
+            })?,
+            fiber_router: fiber_router
+                .ok_or_else(|| usage("level1-space-bench requires --fiber-router <id>"))?,
+            target_source_bytes: target_source_bytes
+                .ok_or_else(|| usage("level1-space-bench requires --target-source-bytes N"))?,
+            cycles: cycles.ok_or_else(|| usage("level1-space-bench requires --cycles N"))?,
+            queries: queries.ok_or_else(|| usage("level1-space-bench requires --queries N"))?,
+            updates: updates.ok_or_else(|| usage("level1-space-bench requires --updates N"))?,
+            deletes: deletes.ok_or_else(|| usage("level1-space-bench requires --deletes N"))?,
+            compact: compact
+                .ok_or_else(|| usage("level1-space-bench requires --compact off|threshold|aggressive|adaptive"))?,
+            adaptive: adaptive.ok_or_else(|| usage("level1-space-bench requires --adaptive on|off"))?,
+        },
+        export_dir: export_dir
+            .ok_or_else(|| usage("level1-space-bench requires --export-dir <path>"))?,
+        format: format.ok_or_else(|| usage("level1-space-bench requires --format json|markdown"))?,
+    })
+}
+
+fn parse_p78_level1_space_estimate_options(
+    args: &[String],
+) -> Result<P78Level1EstimateCliOptions, String> {
+    let mut topology_kind = None;
+    let mut target_source_bytes = None;
+    let mut address_bits = None;
+    let mut file_type_count = None;
+    let mut object_count = None;
+    let mut chunk_count = None;
+    let mut version_count = None;
+    let mut fibers_per_object = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--level1-topology" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-estimate requires a value after --level1-topology")
+            })?;
+            topology_kind = Some(parse_p78_level1_topology(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--level1-topology=") {
+            topology_kind = Some(parse_p78_level1_topology(value)?);
+            idx += 1;
+        } else if arg == "--target-source-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-estimate requires a value after --target-source-bytes")
+            })?;
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--target-source-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--target-source-bytes=") {
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--target-source-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--address-bits" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-estimate requires a value after --address-bits")
+            })?;
+            address_bits = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--address-bits",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--address-bits=") {
+            address_bits = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--address-bits",
+            )?);
+            idx += 1;
+        } else if arg == "--file-type-count" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-estimate requires a value after --file-type-count")
+            })?;
+            file_type_count = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--file-type-count",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--file-type-count=") {
+            file_type_count = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--file-type-count",
+            )?);
+            idx += 1;
+        } else if arg == "--object-count" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-estimate requires a value after --object-count")
+            })?;
+            object_count = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--object-count",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--object-count=") {
+            object_count = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--object-count",
+            )?);
+            idx += 1;
+        } else if arg == "--chunk-count" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-estimate requires a value after --chunk-count")
+            })?;
+            chunk_count = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--chunk-count",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--chunk-count=") {
+            chunk_count = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--chunk-count",
+            )?);
+            idx += 1;
+        } else if arg == "--version-count" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-estimate requires a value after --version-count")
+            })?;
+            version_count = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--version-count",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--version-count=") {
+            version_count = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--version-count",
+            )?);
+            idx += 1;
+        } else if arg == "--fibers-per-object" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("level1-space-estimate requires a value after --fibers-per-object")
+            })?;
+            fibers_per_object = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--fibers-per-object",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--fibers-per-object=") {
+            fibers_per_object = Some(parse_positive_u64(
+                value,
+                "level1-space-estimate",
+                "--fibers-per-object",
+            )?);
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("level1-space-estimate requires a value after --format"))?;
+            format = Some(parse_format_value(value, "level1-space-estimate")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "level1-space-estimate")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "level1-space-estimate received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P78Level1EstimateCliOptions {
+        options: Level1VirtualSpaceEstimateOptions {
+            topology_kind: topology_kind
+                .ok_or_else(|| usage("level1-space-estimate requires --level1-topology <kind>"))?,
+            target_source_bytes: target_source_bytes
+                .ok_or_else(|| usage("level1-space-estimate requires --target-source-bytes N"))?,
+            address_bits: address_bits
+                .ok_or_else(|| usage("level1-space-estimate requires --address-bits N"))?,
+            file_type_count: file_type_count
+                .ok_or_else(|| usage("level1-space-estimate requires --file-type-count N"))?,
+            object_count: object_count
+                .ok_or_else(|| usage("level1-space-estimate requires --object-count N"))?,
+            chunk_count: chunk_count
+                .ok_or_else(|| usage("level1-space-estimate requires --chunk-count N"))?,
+            version_count: version_count
+                .ok_or_else(|| usage("level1-space-estimate requires --version-count N"))?,
+            fibers_per_object: fibers_per_object
+                .ok_or_else(|| usage("level1-space-estimate requires --fibers-per-object N"))?,
+        },
+        format: format
+            .ok_or_else(|| usage("level1-space-estimate requires --format json|markdown"))?,
+    })
+}
+
 fn parse_p76_localities(value: &str) -> Result<Vec<P74LocalityProfile>, String> {
     if value == "all" {
         return Ok(P74LocalityProfile::all());
@@ -3837,6 +4281,32 @@ fn parse_p76_localities(value: &str) -> Result<Vec<P74LocalityProfile>, String> 
         })?);
     }
     Ok(parsed)
+}
+
+fn parse_p78_level1_topologies(value: &str) -> Result<Vec<Level1TopologyKind>, String> {
+    if value == "all" {
+        return Ok(crate::p78_all_level1_topologies());
+    }
+    let mut topologies = Vec::new();
+    for item in value.split(',') {
+        let item = item.trim();
+        topologies.push(parse_p78_level1_topology(item)?);
+    }
+    if topologies.is_empty() {
+        return Err(usage(
+            "level1-space-bench requires non-empty --level1-topology",
+        ));
+    }
+    Ok(topologies)
+}
+
+fn parse_p78_level1_topology(value: &str) -> Result<Level1TopologyKind, String> {
+    Level1TopologyKind::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "level1-space received unsupported topology '{}'; expected all|grid2d|grid3d|tree|path-trie|content-dag|graph|product-typed|hybrid-multi-index",
+            value
+        ))
+    })
 }
 
 fn parse_p76_update_pressures(value: &str) -> Result<Vec<P74UpdatePressure>, String> {
@@ -4234,6 +4704,8 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli routing-oracle-bench --corpus all|code|logs|json|csv|guard --target-source-bytes N --cycles N --queries N --updates N --deletes N --locality all|clustered|random|mixed|hotspot --update-pressure all|low|medium|high --compare oracle,mixed,hierarchical,linear,cubical,trie,graph,hypergraph --export-dir <path> --format json|markdown",
         "  atlas-cli routing-oracle-calibrate --corpus all|code|logs|json|csv|guard --target-source-bytes N --cycles N --queries N --updates N --deletes N --locality all|clustered|random|mixed|hotspot --update-pressure all|low|medium|high --grid smoke|standard|focused|wide --export-dir <path> --format json|markdown",
         "  atlas-cli virtual-space-estimate --topology mixed|linear|cubical|trie|graph|hypergraph|hierarchical --target-source-bytes N --cells N --fibers-per-cell N --hierarchy-depth N --format json|markdown",
+        "  atlas-cli level1-space-bench --corpus all|code|logs|json|csv|guard --level1-topology all|grid2d|grid3d|tree|path-trie|content-dag|graph|product-typed|hybrid-multi-index --fiber-router p77-calibrated --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --export-dir <path> --format json|markdown",
+        "  atlas-cli level1-space-estimate --level1-topology grid2d|grid3d|tree|path-trie|content-dag|graph|product-typed|hybrid-multi-index --target-source-bytes N --address-bits N --file-type-count N --object-count N --chunk-count N --version-count N --fibers-per-object N --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))
 }

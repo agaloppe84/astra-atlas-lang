@@ -63,3 +63,6 @@ artifacts/p76/
 
 # P77 local routing oracle calibration exports
 artifacts/p77/
+
+# P78 local level-1 virtual space and universal fiber store exports
+artifacts/p78/

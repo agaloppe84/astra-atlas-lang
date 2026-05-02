@@ -1,0 +1,5 @@
+atlas version=0.1;
+p78_level1_probe mode=level1_virtual_space;
+level1_address_space id=bad_space topology=hybrid_multi_index components=path_trie,content_dag address_bits=64 local_on_address=true materialization=global_forbidden;
+universal_fiber_store id=store accept_any_file=true raw_fallback=explicit guard_no_false_gain=true codec_selection=entropy_and_structure;
+virtual_space_gates virtual_space_metrics_required=true virtual_bytes_claim=stored ratio_living_primary=true address_lookup_bounded=true local_materialization_only=true guard_no_false_gain=true hidden_level1_overhead=false;
