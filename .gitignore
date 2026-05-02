@@ -60,3 +60,6 @@ artifacts/p75/
 
 # P76 local routing oracle and virtual space exports
 artifacts/p76/
+
+# P77 local routing oracle calibration exports
+artifacts/p77/

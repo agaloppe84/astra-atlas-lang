@@ -11,7 +11,7 @@ struct InvalidCase {
     message: &'static str,
 }
 
-fn invalid_cases() -> [InvalidCase; 76] {
+fn invalid_cases() -> [InvalidCase; 84] {
     [
         InvalidCase {
             name: "bad_version",
@@ -620,6 +620,70 @@ fn invalid_cases() -> [InvalidCase; 76] {
             family: None,
             field: None,
             message: "unknown block 'p76_process_probe'",
+        },
+        InvalidCase {
+            name: "p77_missing_oracle_ratio_gate",
+            text: include_str!("../examples/invalid/p77_missing_oracle_ratio_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p77_calibration_probe'",
+        },
+        InvalidCase {
+            name: "p77_low_accuracy_threshold",
+            text: include_str!("../examples/invalid/p77_low_accuracy_threshold.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p77_calibration_probe'",
+        },
+        InvalidCase {
+            name: "p77_missing_wrong_route_budget",
+            text: include_str!("../examples/invalid/p77_missing_wrong_route_budget.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p77_calibration_probe'",
+        },
+        InvalidCase {
+            name: "p77_hidden_router_overhead",
+            text: include_str!("../examples/invalid/p77_hidden_router_overhead.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p77_calibration_probe'",
+        },
+        InvalidCase {
+            name: "p77_non_living_calibration",
+            text: include_str!("../examples/invalid/p77_non_living_calibration.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p77_calibration_probe'",
+        },
+        InvalidCase {
+            name: "p77_missing_guard_gate",
+            text: include_str!("../examples/invalid/p77_missing_guard_gate.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p77_calibration_probe'",
+        },
+        InvalidCase {
+            name: "p77_bad_bias_value",
+            text: include_str!("../examples/invalid/p77_bad_bias_value.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p77_calibration_probe'",
+        },
+        InvalidCase {
+            name: "p77_unbounded_fallback",
+            text: include_str!("../examples/invalid/p77_unbounded_fallback.atlas"),
+            code: DiagnosticCode::ParseError,
+            family: None,
+            field: None,
+            message: "unknown block 'p77_calibration_probe'",
         },
     ]
 }

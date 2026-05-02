@@ -14,8 +14,9 @@ use crate::{
     P69ContractRunOptions, P70ContractReplayOptions, P70ReplayFixtureKind, P71FiberStoreOptions,
     P72CompactionPolicy, P72LivingStoreOptions, P73CompareP72, P73CubicalStoreOptions,
     P74CompactionPolicy, P74LocalityProfile, P74TopologyLivingOptions, P74UpdatePressure,
-    P76CompareTarget, P76VirtualSpaceEstimateOptions, RealDataCorpusKind, RouterLivingOptions,
-    RouterPolicy, RoutingOracleOptions, TopologyKind, WorkloadMode,
+    P76CompareTarget, P76VirtualSpaceEstimateOptions, P77CalibrationGridKind,
+    P77RouterCalibrationOptions, RealDataCorpusKind, RouterLivingOptions, RouterPolicy,
+    RoutingOracleOptions, TopologyKind, WorkloadMode,
 };
 use std::env;
 
@@ -77,6 +78,7 @@ fn run(args: &[String]) -> Result<(), String> {
         "topology-living-bench" => topology_living_bench_command(args),
         "mixed-topology-bench" => mixed_topology_bench_command(args),
         "routing-oracle-bench" => routing_oracle_bench_command(args),
+        "routing-oracle-calibrate" => routing_oracle_calibrate_command(args),
         "virtual-space-estimate" => virtual_space_estimate_command(args),
         path if args.len() == 1 => check_path(path),
         _ => Err(usage("unknown command")),
@@ -84,6 +86,22 @@ fn run(args: &[String]) -> Result<(), String> {
 }
 
 fn check_path(path: &str) -> Result<(), String> {
+    if crate::p77_router_policy_file_looks_like(path) {
+        return match crate::p77_router_policy_report_file(path) {
+            Ok(report) => {
+                println!(
+                    "OK: p77_policy={} confidence={:.2} fallback={:.2} living={} guard={}",
+                    report.policy_id,
+                    report.confidence_threshold,
+                    report.fallback_threshold,
+                    report.living_memory_only,
+                    report.guard_no_false_gain
+                );
+                Ok(())
+            }
+            Err(diagnostic) => Err(diagnostic.to_string()),
+        };
+    }
     if crate::p76_process_file_looks_like(path) {
         return match crate::p76_process_contract_report_file(path) {
             Ok(report) => {
@@ -632,6 +650,17 @@ fn routing_oracle_bench_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn routing_oracle_calibrate_command(args: &[String]) -> Result<(), String> {
+    let options = parse_p77_router_calibration_options(&args[1..])?;
+    let report = crate::p77_calibrate_router(options.options, &options.export_dir)
+        .map_err(|diagnostic| diagnostic.to_string())?;
+    match options.format {
+        OutputFormat::Json => println!("{}", crate::p77_calibration_json(&report)),
+        OutputFormat::Markdown => println!("{}", crate::p77_calibration_markdown(&report)),
+    }
+    Ok(())
+}
+
 fn virtual_space_estimate_command(args: &[String]) -> Result<(), String> {
     let options = parse_p76_virtual_space_estimate_options(&args[1..])?;
     let metrics = crate::p76_virtual_space_estimate(options.options);
@@ -777,6 +806,13 @@ struct P76RoutingOracleCliOptions {
 #[derive(Debug, Clone, PartialEq)]
 struct P76VirtualSpaceEstimateCliOptions {
     options: P76VirtualSpaceEstimateOptions,
+    format: OutputFormat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct P77RouterCalibrationCliOptions {
+    options: P77RouterCalibrationOptions,
+    export_dir: String,
     format: OutputFormat,
 }
 
@@ -3464,6 +3500,204 @@ fn parse_p76_routing_oracle_options(args: &[String]) -> Result<P76RoutingOracleC
     })
 }
 
+fn parse_p77_router_calibration_options(
+    args: &[String],
+) -> Result<P77RouterCalibrationCliOptions, String> {
+    let mut corpora = None;
+    let mut target_source_bytes = None;
+    let mut cycles = None;
+    let mut queries = None;
+    let mut updates = None;
+    let mut deletes = None;
+    let mut locality_profiles = None;
+    let mut update_pressures = None;
+    let mut grid_kind = None;
+    let mut export_dir = None;
+    let mut format = None;
+    let mut idx = 0;
+
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if arg == "--corpus" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-calibrate requires a value after --corpus"))?;
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--corpus=") {
+            corpora = Some(parse_p71_corpora(value)?);
+            idx += 1;
+        } else if arg == "--target-source-bytes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("routing-oracle-calibrate requires a value after --target-source-bytes")
+            })?;
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "routing-oracle-calibrate",
+                "--target-source-bytes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--target-source-bytes=") {
+            target_source_bytes = Some(parse_positive_u64(
+                value,
+                "routing-oracle-calibrate",
+                "--target-source-bytes",
+            )?);
+            idx += 1;
+        } else if arg == "--cycles" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-calibrate requires a value after --cycles"))?;
+            cycles = Some(parse_positive_usize(
+                value,
+                "routing-oracle-calibrate",
+                "--cycles",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--cycles=") {
+            cycles = Some(parse_positive_usize(
+                value,
+                "routing-oracle-calibrate",
+                "--cycles",
+            )?);
+            idx += 1;
+        } else if arg == "--queries" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("routing-oracle-calibrate requires a value after --queries")
+            })?;
+            queries = Some(parse_positive_usize(
+                value,
+                "routing-oracle-calibrate",
+                "--queries",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--queries=") {
+            queries = Some(parse_positive_usize(
+                value,
+                "routing-oracle-calibrate",
+                "--queries",
+            )?);
+            idx += 1;
+        } else if arg == "--updates" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("routing-oracle-calibrate requires a value after --updates")
+            })?;
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "routing-oracle-calibrate",
+                "--updates",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--updates=") {
+            updates = Some(parse_nonnegative_usize(
+                value,
+                "routing-oracle-calibrate",
+                "--updates",
+            )?);
+            idx += 1;
+        } else if arg == "--deletes" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("routing-oracle-calibrate requires a value after --deletes")
+            })?;
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "routing-oracle-calibrate",
+                "--deletes",
+            )?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--deletes=") {
+            deletes = Some(parse_nonnegative_usize(
+                value,
+                "routing-oracle-calibrate",
+                "--deletes",
+            )?);
+            idx += 1;
+        } else if arg == "--locality" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("routing-oracle-calibrate requires a value after --locality")
+            })?;
+            locality_profiles = Some(parse_p76_localities(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--locality=") {
+            locality_profiles = Some(parse_p76_localities(value)?);
+            idx += 1;
+        } else if arg == "--update-pressure" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("routing-oracle-calibrate requires a value after --update-pressure")
+            })?;
+            update_pressures = Some(parse_p76_update_pressures(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--update-pressure=") {
+            update_pressures = Some(parse_p76_update_pressures(value)?);
+            idx += 1;
+        } else if arg == "--grid" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-calibrate requires a value after --grid"))?;
+            grid_kind = Some(parse_p77_grid_kind(value)?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--grid=") {
+            grid_kind = Some(parse_p77_grid_kind(value)?);
+            idx += 1;
+        } else if arg == "--export-dir" {
+            let value = args.get(idx + 1).ok_or_else(|| {
+                usage("routing-oracle-calibrate requires a value after --export-dir")
+            })?;
+            export_dir = Some(value.to_string());
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--export-dir=") {
+            export_dir = Some(value.to_string());
+            idx += 1;
+        } else if arg == "--format" {
+            let value = args
+                .get(idx + 1)
+                .ok_or_else(|| usage("routing-oracle-calibrate requires a value after --format"))?;
+            format = Some(parse_format_value(value, "routing-oracle-calibrate")?);
+            idx += 2;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = Some(parse_format_value(value, "routing-oracle-calibrate")?);
+            idx += 1;
+        } else {
+            return Err(usage(format!(
+                "routing-oracle-calibrate received unsupported option '{}'",
+                arg
+            )));
+        }
+    }
+
+    Ok(P77RouterCalibrationCliOptions {
+        options: P77RouterCalibrationOptions {
+            corpora: corpora.ok_or_else(|| {
+                usage("routing-oracle-calibrate requires --corpus all|code|logs|json|csv|guard")
+            })?,
+            target_source_bytes: target_source_bytes.ok_or_else(|| {
+                usage("routing-oracle-calibrate requires --target-source-bytes N")
+            })?,
+            cycles: cycles
+                .ok_or_else(|| usage("routing-oracle-calibrate requires --cycles N"))?,
+            queries: queries
+                .ok_or_else(|| usage("routing-oracle-calibrate requires --queries N"))?,
+            updates: updates
+                .ok_or_else(|| usage("routing-oracle-calibrate requires --updates N"))?,
+            deletes: deletes
+                .ok_or_else(|| usage("routing-oracle-calibrate requires --deletes N"))?,
+            locality_profiles: locality_profiles.ok_or_else(|| {
+                usage("routing-oracle-calibrate requires --locality all|clustered|random|mixed|hotspot")
+            })?,
+            update_pressures: update_pressures.ok_or_else(|| {
+                usage("routing-oracle-calibrate requires --update-pressure all|low|medium|high")
+            })?,
+            grid_kind: grid_kind.ok_or_else(|| {
+                usage("routing-oracle-calibrate requires --grid smoke|standard|focused|wide")
+            })?,
+        },
+        export_dir: export_dir
+            .ok_or_else(|| usage("routing-oracle-calibrate requires --export-dir <path>"))?,
+        format: format
+            .ok_or_else(|| usage("routing-oracle-calibrate requires --format json|markdown"))?,
+    })
+}
+
 fn parse_p76_virtual_space_estimate_options(
     args: &[String],
 ) -> Result<P76VirtualSpaceEstimateCliOptions, String> {
@@ -3637,6 +3871,15 @@ fn parse_p76_compare_targets(value: &str) -> Result<Vec<P76CompareTarget>, Strin
         return Err(usage("routing-oracle-bench requires non-empty --compare"));
     }
     Ok(parsed)
+}
+
+fn parse_p77_grid_kind(value: &str) -> Result<P77CalibrationGridKind, String> {
+    P77CalibrationGridKind::from_str(value).ok_or_else(|| {
+        usage(format!(
+            "routing-oracle-calibrate received unsupported grid '{}'; expected smoke|standard|focused|wide",
+            value
+        ))
+    })
 }
 
 fn parse_bool_value(value: &str, command: &str, option: &str) -> Result<bool, String> {
@@ -3989,6 +4232,7 @@ fn usage(detail: impl AsRef<str>) -> String {
         "  atlas-cli topology-living-bench --corpus all|code|logs|json|csv|guard --topology all|linear|cubical|trie|graph|hypergraph|hierarchical --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --locality clustered|random|mixed|hotspot --update-pressure low|medium|high --export-dir <path> --format json|markdown",
         "  atlas-cli mixed-topology-bench --corpus all|code|logs|json|csv|guard --router mixed|hierarchical-only|linear-only|cubical-only|trie-only|graph-only|hypergraph-only --target-source-bytes N --cycles N --queries N --updates N --deletes N --compact off|threshold|aggressive|adaptive --adaptive on|off --locality clustered|random|mixed|hotspot --update-pressure low|medium|high --export-dir <path> --format json|markdown",
         "  atlas-cli routing-oracle-bench --corpus all|code|logs|json|csv|guard --target-source-bytes N --cycles N --queries N --updates N --deletes N --locality all|clustered|random|mixed|hotspot --update-pressure all|low|medium|high --compare oracle,mixed,hierarchical,linear,cubical,trie,graph,hypergraph --export-dir <path> --format json|markdown",
+        "  atlas-cli routing-oracle-calibrate --corpus all|code|logs|json|csv|guard --target-source-bytes N --cycles N --queries N --updates N --deletes N --locality all|clustered|random|mixed|hotspot --update-pressure all|low|medium|high --grid smoke|standard|focused|wide --export-dir <path> --format json|markdown",
         "  atlas-cli virtual-space-estimate --topology mixed|linear|cubical|trie|graph|hypergraph|hierarchical --target-source-bytes N --cells N --fibers-per-cell N --hierarchy-depth N --format json|markdown",
     ];
     format!("{}\n{}", detail.as_ref(), commands.join("\n"))

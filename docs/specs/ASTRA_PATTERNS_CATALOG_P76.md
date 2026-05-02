@@ -35,3 +35,11 @@
 
 P77 should train or hand-calibrate deterministic router thresholds against P76
 oracle regret while preserving living-memory 10 MiB campaigns.
+
+## P77 Router Policy Note
+
+`p77_calibrated_router_v1` is a deterministic candidate policy, not a new core
+spec replacement. It lowers hierarchy fallback bias, strengthens linear routing
+for update-heavy sparse fibers, and raises graph/hypergraph preference where
+the P76 oracle exposed wrong-route regret. The P76 spec snapshot remains the
+working baseline; P77 only appends the calibrated-router note.

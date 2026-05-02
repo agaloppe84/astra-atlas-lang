@@ -500,6 +500,41 @@ et les specs sous [docs/specs/](docs/specs/).
 Decision P76 attendue: spec core gelee pour P77, routeur a recalibrer contre
 l'oracle; pas de promotion tant que le cout des mauvais routages reste non nul.
 
+## Validation P77 oracle-calibrated router
+
+P77 ajoute `routing-oracle-calibrate` pour calibrer deterministiquement les
+seuils du routeur mixed-topology contre l'oracle P76. La calibration reste
+living-memory: source locale proche de 10 MiB, open/read/query/update/delete,
+audit, compaction, close/reopen, guard incompressible et metriques d'espace
+virtuel equivalent.
+
+```bash
+cargo run -p atlas-cli -- routing-oracle-calibrate \
+  --corpus all \
+  --target-source-bytes 10485760 \
+  --cycles 10 \
+  --queries 10000 \
+  --updates 1000 \
+  --deletes 100 \
+  --locality all \
+  --update-pressure all \
+  --grid standard \
+  --export-dir artifacts/p77/router_calibration_standard \
+  --format json
+```
+
+Les exports restent sous `artifacts/p77/` et sont ignores par Git. Voir
+[docs/validation/astra-p77-oracle-calibrated-router.md](docs/validation/astra-p77-oracle-calibrated-router.md),
+la policy calibree
+[docs/validation/astra-p77-calibrated-router-policy.md](docs/validation/astra-p77-calibrated-router-policy.md),
+l'audit de tests
+[docs/analysis/ASTRA-P77-test-stack-audit.md](docs/analysis/ASTRA-P77-test-stack-audit.md)
+et le rapport d'analyse
+[docs/analysis/ASTRA-P77-oracle-calibrated-mixed-router-analysis.md](docs/analysis/ASTRA-P77-oracle-calibrated-mixed-router-analysis.md).
+
+Decision attendue par defaut: `RECALIBRATE_P77_ROUTER_THRESHOLDS` tant que le
+routeur calibre reste sous tous les gates stricts de promotion.
+
 ## ASTRA Results LaTeX/PDF
 
 Les rapports Results figes vivent sous [reports/](reports/). Le rapport

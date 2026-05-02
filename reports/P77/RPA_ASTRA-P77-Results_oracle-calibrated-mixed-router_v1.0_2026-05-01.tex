@@ -1,0 +1,229 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black,
+  pdftitle={ASTRA-P77 Results -- Oracle-Calibrated Mixed Router},
+  pdfauthor={ASTRA / Representations Procedurales Adressables}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.58em}
+\renewcommand{\arraystretch}{1.10}
+\sloppy
+
+\newcommand{\Code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\SmallCode}[1]{{\small\texttt{\detokenize{#1}}}}
+\newcommand{\TinyCode}[1]{{\scriptsize\texttt{\detokenize{#1}}}}
+\newcommand{\Decision}[1]{\textbf{\TinyCode{#1}}}
+
+\title{\textbf{ASTRA-P77 Results}\\Oracle-Calibrated Mixed Topology Router}
+\author{ASTRA / Repr\'esentations Proc\'edurales Adressables}
+\date{2026-05-01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+P77 calibre le routeur mixed-topology contre l'oracle P76 avec une grille
+deterministe de seuils et de biais. Le run living-memory conserve le ratio
+P76, reduit le cout des mauvais routages de plus de 50\%, maintient le guard,
+le reopen et le drift \Code{NO_DRIFT}. Le seuil strict de promotion reste
+manque de peu: \Code{router/oracle = 0.984600} pour un gate a \Code{0.985}.
+La decision reste donc \Decision{RECALIBRATE_P77_ROUTER_THRESHOLDS}.
+\end{abstract}
+
+\section{Objectif}
+
+P77 teste si les seuils deterministes du routeur mixed-topology peuvent etre
+calibres contre l'oracle P76. La decision R\&D reste basee sur une campagne
+living-memory: encode, open, read/query, update, delete, audit, compact, close
+et reopen.
+
+\section{Principes}
+
+\begin{itemize}
+  \item \Code{ratio_living} reste la metrique centrale.
+  \item Les bytes virtuels sont des equivalents de materialisation, pas des
+  bytes stockes.
+  \item Le routeur agit localement quand une adresse ou une fibre locale est
+  atteinte.
+  \item Guard, reopen, retrieval et cost accounting restent bloquants.
+\end{itemize}
+
+\section{Syntaxe .atlas P77}
+
+La syntaxe reste declarative et specialisee:
+
+\begin{verbatim}
+p77_calibration_probe mode=oracle_calibrated_router;
+router_policy id=p77_calibrated_router_v1
+  confidence_threshold=0.50 fallback_threshold=0.20
+  hierarchy_bias=0.92 linear_update_bias=1.20
+  trie_prefix_bias=1.05 graph_relation_bias=1.15
+  hypergraph_tag_bias=1.10 guard_threshold=strict;
+router_calibration_gates living_memory_only=true
+  router_oracle_ratio_min=0.985 routing_accuracy_min=0.96
+  wrong_route_cost_reduction_min=0.50 wrong_route_budget=controlled
+  guard_no_false_gain=true reopen_equivalence=true
+  drift_no_hard=true hidden_router_overhead=false;
+\end{verbatim}
+
+\section{Validation locale}
+
+\begin{itemize}
+  \item \Code{cargo test --test p77_tests}: PASS, 14 tests.
+  \item \Code{routing-oracle-calibrate} standard: PASS.
+  \item \Code{routing-oracle-calibrate} ambitious-focused: PASS.
+  \item Invalides P77: 8/8 refuses.
+  \item Les tests non-living restent des non-regressions, pas une preuve de
+  promotion architecturale.
+\end{itemize}
+
+\section{Policy calibree}
+
+\begin{longtable}{@{}p{0.52\linewidth}p{0.28\linewidth}@{}}
+\toprule
+Parametre & Valeur \\
+\midrule
+\Code{confidence_threshold} & 0.50 \\
+\Code{fallback_threshold} & 0.20 \\
+\Code{hierarchy_bias} & 0.92 \\
+\Code{linear_update_bias} & 1.20 \\
+\Code{trie_prefix_bias} & 1.05 \\
+\Code{graph_relation_bias} & 1.15 \\
+\Code{hypergraph_tag_bias} & 1.10 \\
+\Code{guard_threshold} & strict \\
+\bottomrule
+\end{longtable}
+
+\section{Resultats standard}
+
+\begin{longtable}{@{}p{0.48\linewidth}p{0.38\linewidth}@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\Code{target_source_bytes} & 10,485,760 \\
+\Code{actual_source_bytes} & 10,485,760 \\
+\Code{configurations} & 18 \\
+\Code{ratio_living router P76} & 4.955068 \\
+\Code{ratio_living oracle P76} & 5.076273 \\
+\Code{ratio_living calibrated} & 4.998098 \\
+\Code{router/oracle ratio} & 0.984600 \\
+\Code{routing_accuracy} & 0.974155 \\
+\Code{wrong_route_count} & 570 / 214 \\
+\Code{wrong_route_cost} & 2034 / 783 \\
+\Code{wrong_route_cost_reduction} & 61.5044\% \\
+\Code{update_cost} & 36,026 \\
+\Code{audit_cost} & 749 \\
+\Code{phase map} & 340 / 524 / 216 \\
+\Code{guard_decision} & \TinyCode{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED} \\
+\Code{reopen_equivalence} & true \\
+\Code{drift_status} & \Code{NO_DRIFT} \\
+\bottomrule
+\end{longtable}
+
+\section{Resultats ambitious-focused}
+
+\begin{longtable}{@{}p{0.48\linewidth}p{0.38\linewidth}@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\Code{target_source_bytes} & 10,485,760 \\
+\Code{actual_source_bytes} & 10,485,760 \\
+\Code{configurations} & 12 \\
+\Code{ratio_living calibrated} & 4.998098 \\
+\Code{router/oracle ratio} & 0.984600 \\
+\Code{routing_accuracy} & 0.974155 \\
+\Code{wrong_route_count} & 570 / 214 \\
+\Code{wrong_route_cost} & 2034 / 783 \\
+\Code{update_cost} & 182,411 \\
+\Code{audit_cost} & 3,519 \\
+\Code{phase map} & 220 / 356 / 144 \\
+\Code{guard_decision} & \TinyCode{NO_GO_GUARD_INCOMPRESSIBLE_REFUSED} \\
+\Code{reopen_equivalence} & true \\
+\Code{drift_status} & \Code{NO_DRIFT} \\
+\bottomrule
+\end{longtable}
+
+\section{Espace virtuel}
+
+\begin{longtable}{@{}p{0.55\linewidth}p{0.28\linewidth}@{}}
+\toprule
+Metrique & Valeur \\
+\midrule
+\Code{virtual_cell_count} & 10,000 \\
+\Code{virtual_fiber_count} & 40,000 \\
+\Code{virtual_face_count} & 30,000 \\
+\Code{virtual_edge_count} & 80,000 \\
+\Code{virtual_hyperedge_count} & 13,333 \\
+\Code{virtual_effective_bytes_equivalent} & 63,532,744 \\
+\Code{cold_persisted_bytes} & 1,019,318 \\
+\Code{runtime_peak_bytes} & 512,520 \\
+\Code{bytes_are_equivalent_not_stored} & true \\
+\Code{address_lookup_p95_steps} & 10.250 \\
+\Code{crud_success_rate} & 1.000000 \\
+\bottomrule
+\end{longtable}
+
+\section{Wrong-route analysis}
+
+Les mauvais routages residuels se concentrent sur deux corpus:
+
+\begin{itemize}
+  \item \Code{real_code_corpus_10m}: 58 routes ponderees;
+  \item \Code{sparse_csv_10m}: 156 routes ponderees.
+\end{itemize}
+
+Par famille de feature:
+
+\begin{itemize}
+  \item \Code{generic_retrieval}: 58;
+  \item \Code{row_column_graph}: 68;
+  \item \Code{sparse_tile}: 88.
+\end{itemize}
+
+\section{Decision}
+
+\Decision{RECALIBRATE_P77_ROUTER_THRESHOLDS}
+
+La calibration est positive: le cout des mauvais routages passe de 2034 a 783
+et l'accuracy monte a 0.974155. La promotion est refusee parce que le ratio
+routeur/oracle vaut 0.984600, juste sous le seuil strict 0.985.
+
+\section{Limites}
+
+\begin{itemize}
+  \item L'oracle reste un oracle de protocole, pas une preuve d'optimalite
+  globale.
+  \item La grille est bornee et deterministe.
+  \item Les timings restent dependants de la machine et ne sont pas
+  goldenises.
+  \item Les bytes virtuels restent des equivalents, pas du stockage physique.
+\end{itemize}
+
+\section{Chemin P78}
+
+P78 devrait ajouter des budgets par corpus et par famille de feature,
+notamment pour \Code{sparse_tile}, \Code{row_column_graph} et
+\Code{generic_retrieval}. Le but est de franchir le gate \Code{0.985} sans
+perdre l'avantage update/audit ni introduire de routage opaque.
+
+\end{document}

@@ -1,0 +1,4 @@
+atlas version=0.1;
+p77_calibration_probe mode=oracle_calibrated_router;
+router_policy id=p77_calibrated_router_v1 confidence_threshold=0.50 fallback_threshold=0.20 hierarchy_bias=0.92 linear_update_bias=1.20 trie_prefix_bias=1.05 graph_relation_bias=1.15 hypergraph_tag_bias=1.10 guard_threshold=strict;
+router_calibration_gates living_memory_only=false router_oracle_ratio_min=0.985 routing_accuracy_min=0.96 wrong_route_cost_reduction_min=0.50 wrong_route_budget=controlled guard_no_false_gain=true reopen_equivalence=true drift_no_hard=true hidden_router_overhead=false;
